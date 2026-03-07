@@ -58,7 +58,7 @@ function(download_wasmer)
   add_library(wasmer::wasmer INTERFACE IMPORTED)
 
   if(NOT EXISTS ${wasmer_SOURCE_DIR}/lib/${WASMER_STATIC_LIBRARY_NAME})
-    message(ERROR "wasmer library not found: ${wasmer_SOURCE_DIR}/lib/${WASMER_STATIC_LIBRARY_NAME}")
+    message(FATAL_ERROR "wasmer library not found: ${wasmer_SOURCE_DIR}/lib/${WASMER_STATIC_LIBRARY_NAME}")
   endif()
 
   set(WASMER_LINK_LIBRARIES ${wasmer_SOURCE_DIR}/lib/${WASMER_STATIC_LIBRARY_NAME})
