@@ -211,9 +211,12 @@ void ToolboxMosaico::init(PJ::PlotDataMapRef& src_data, PJ::TransformsMap& /*tra
       [&]() {
         plot_data_ = &src_data;
         main_window_ = new MainWindow(nullptr);
+        main_window_->setPlotDataMap(&src_data);
 
         connect(main_window_, &MainWindow::mosaicoDataReady, this,
                 &ToolboxMosaico::onMosaicoDataReady);
+        connect(main_window_, &MainWindow::plotCreated, this,
+                [this](const QString& name) { emit plotCreated(name.toStdString()); });
         connect(main_window_, &MainWindow::mosaicoTopicStarted, this,
                 &ToolboxMosaico::onMosaicoTopicStarted);
         connect(main_window_, &MainWindow::mosaicoTopicBatchReady, this,

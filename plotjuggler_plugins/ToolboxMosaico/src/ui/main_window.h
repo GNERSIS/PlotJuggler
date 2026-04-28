@@ -13,6 +13,10 @@ using mosaico::TimeRange;
 using mosaico::TopicInfo;
 #include "types.h"
 
+#include "bench/bench_core.hpp"
+
+#include "PlotJuggler/plotdata.h"
+
 #include <QHash>
 #include <QSet>
 #include <QString>
@@ -30,6 +34,7 @@ class QSettings;
 class QSplitter;
 class QThread;
 class RangeSlider;
+class PlotDataMapSink;
 
 namespace mosaico
 {
@@ -62,6 +67,13 @@ public:
   // connection errors will be shown as a popup; otherwise only in the status label.
   void connectToServer(bool explicit_connect);
 
+  // Called by the plugin wrapper to hand in PJ's live data map so bench
+  // timeseries can be injected directly (without a round-trip through importData).
+  void setPlotDataMap(PJ::PlotDataMapRef* data)
+  {
+    plot_data_map_ = data;
+  }
+
   const std::vector<SequenceInfo>& sequences() const
   {
     return all_sequences_;
@@ -90,6 +102,8 @@ signals:
   void backRequested();
   void queryChanged(const QString& query, bool valid);
   void schemaReady(const Schema& schema);
+  // Emitted when bench series are added to PJ's data map so the PJ tree updates.
+  void plotCreated(QString name);
 
 private slots:
   void onSequenceSelected(const QString& sequence_name);
@@ -115,6 +129,16 @@ private slots:
   void onRefreshClicked();
   void onQueryChanged(const QString& query, bool valid);
   void onServerSelected(int index);
+  void onRunBenchClicked();
+  void onBenchPhase(int run_id, double t_s, QString phase, QString topic);
+  void onBenchBatch(int run_id, double t_s, QString topic, qint64 bytes, qint64 rows,
+                    double gap_ms);
+  void onBenchSample(int run_id, double t_s, quint32 cwnd, double srtt_ms, quint64 retrans,
+                     quint64 acked, quint32 rcv_kb, quint64 rss, quint64 vsz, quint64 heap,
+                     double cpu);
+  void onBenchSummary(int run_id, double wall_time_s, qint64 cum_bytes, double avg_mbps,
+                      double peak_mbps, double max_gap_ms, quint64 rss_start, quint64 rss_peak,
+                      quint64 rss_end, double retention_ratio, int verdict, QString error);
 
 private:
   void buildLayout();
@@ -217,6 +241,23 @@ private:
   FetchWorker* worker_ = nullptr;
   QThread* worker_thread_ = nullptr;
   DownloadStatsDialog* download_stats_dialog_ = nullptr;
+
+  // Pointer to PJ's live PlotDataMapRef — set by toolbox wrapper via setPlotDataMap().
+  // Bench timeseries are injected here directly (no importData round-trip).
+  PJ::PlotDataMapRef* plot_data_map_ = nullptr;
+
+  // Benchmark UI / state
+  QPushButton* bench_button_ = nullptr;
+  std::unique_ptr<PlotDataMapSink> bench_sink_;
+  // Owned per-bench-run; cleared on bench completion.
+  std::vector<std::unique_ptr<mosaico::bench::MetricsSink>> active_bench_sinks_;
+  // Settings popover state
+  int bench_repeat_ = 1;
+  bool bench_use_cache_ = false;
+  QString bench_csv_path_;
+  // Accumulates series names created during a bench run; flushed via plotCreated() in
+  // onBenchSummary.
+  QSet<QString> new_bench_series_;
 
   // Tracks error context so we only show popups for explicit Connect clicks.
   enum class ErrorContext

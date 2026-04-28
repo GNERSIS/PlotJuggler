@@ -4,7 +4,7 @@ if(NOT TARGET ArrowFlight::arrow_flight_static AND NOT TARGET ArrowFlight::arrow
 endif()
 
 set(MOSAICO_ARROW_FLIGHT_TARGET "")
-foreach(candidate ArrowFlight::arrow_flight_static ArrowFlight::arrow_flight_shared)
+foreach(candidate ArrowFlight::arrow_flight_shared ArrowFlight::arrow_flight_static)
     if(TARGET ${candidate})
         set(MOSAICO_ARROW_FLIGHT_TARGET ${candidate})
         break()
@@ -20,7 +20,7 @@ endif()
 # targets so the final plugin link line includes both static libraries.
 if(NOT TARGET arrow::arrow)
     set(MOSAICO_ARROW_TARGET "")
-    foreach(candidate Arrow::arrow_static Arrow::arrow_shared)
+    foreach(candidate Arrow::arrow_shared Arrow::arrow_static)
         if(TARGET ${candidate})
             set(MOSAICO_ARROW_TARGET ${candidate})
             break()

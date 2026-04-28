@@ -9,6 +9,9 @@
 #include "main_window.h"
 
 #include "../core/time_format.h"
+#include "bench/plot_data_map_sink.h"
+#include "bench/bench_core.hpp"
+#include "bench/csv_sinks.hpp"
 #include "download_stats_dialog.h"
 #include "elided_label.h"
 #include "fetch_worker.h"
@@ -28,7 +31,10 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QComboBox>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
@@ -242,10 +248,14 @@ void MainWindow::buildLayout()
   fetch_button_->setEnabled(false);
   fetch_button_->setMinimumWidth(80);
 
+  bench_button_ = new QPushButton(tr("Run benchmark"));
+  bench_button_->setEnabled(false);  // mirrors fetch_button_ enable rule
+
   auto* slider_row = new QWidget(this);
   auto* slider_layout = new QHBoxLayout(slider_row);
   slider_layout->addWidget(range_slider_, /*stretch=*/1);
   slider_layout->addWidget(fetch_button_);
+  slider_layout->addWidget(bench_button_);
 
   // --- Root layout (VBoxLayout so slider_row never collapses) ---
   auto* vlayout = new QVBoxLayout(this);
@@ -265,6 +275,7 @@ void MainWindow::connectSignals()
   connect(sequence_panel_, &SequencePanel::sequenceSelected, this, &MainWindow::onSequenceSelected);
   connect(topic_panel_, &TopicPanel::topicsSelected, this, &MainWindow::onTopicsSelected);
   connect(fetch_button_, &QPushButton::clicked, this, &MainWindow::onFetchClicked);
+  connect(bench_button_, &QPushButton::clicked, this, &MainWindow::onRunBenchClicked);
   connect(connect_button_, &QPushButton::clicked, this, &MainWindow::onConnectClicked);
   connect(query_bar_, &QueryBar::queryChanged, this, &MainWindow::onQueryChanged);
   connect(refresh_button_, &QPushButton::clicked, this, &MainWindow::onRefreshClicked);
@@ -449,6 +460,7 @@ void MainWindow::onSequenceSelected(const QString& sequence_name)
   topic_panel_->setLoading(true);
   data_view_panel_->clear();
   fetch_button_->setEnabled(false);
+  bench_button_->setEnabled(false);
 
   auto name_std = sequence_name.toStdString();
   for (const auto& seq : all_sequences_)
@@ -494,6 +506,7 @@ void MainWindow::onTopicsSelected(const QString& /*sequence_name*/, const QStrin
 
   data_view_panel_->clearTopics();
   fetch_button_->setEnabled(!topic_names.isEmpty());
+  bench_button_->setEnabled(!topic_names.isEmpty());
 
   // Render each selected topic's info pane. listTopics gave us name +
   // timestamp range cheaply; the schema/ontology/user_metadata require a
@@ -652,6 +665,7 @@ void MainWindow::requestFetchCancel()
     download_stats_dialog_->markCancelling();
   }
   fetch_button_->setEnabled(false);
+  bench_button_->setEnabled(false);
   setStatus(QStringLiteral("Cancelling..."));
 }
 
@@ -691,6 +705,7 @@ void MainWindow::finishFetchBatch()
   fetch_button_->setText("Download");
   fetch_button_->setToolTip("Download selected topics");
   fetch_button_->setEnabled(!selected_topics_.isEmpty());
+  bench_button_->setEnabled(!selected_topics_.isEmpty());
 
   error_context_ = ErrorContext::None;
   if (client_)
@@ -1374,4 +1389,166 @@ void MainWindow::writeCachedCredentials(const QString& key)
   settings.endGroup();
   settings.endGroup();
   settings.endGroup();
+}
+
+// ---------------------------------------------------------------------------
+// Benchmark slots
+// ---------------------------------------------------------------------------
+
+void MainWindow::onRunBenchClicked()
+{
+  if (selected_topics_.isEmpty() || selected_sequence_.isEmpty())
+  {
+    return;
+  }
+
+  // Minimal popover: ask repeat count, cache toggle, optional CSV path.
+  bool ok = false;
+  bench_repeat_ =
+      QInputDialog::getInt(this, tr("Run benchmark"), tr("Repeat:"), bench_repeat_, 1, 100, 1, &ok);
+  if (!ok)
+  {
+    return;
+  }
+  auto answer = QMessageBox::question(this, tr("Cache?"),
+                                      tr("Use the local cache during benchmark?\n"
+                                         "(default: no — bench measures raw network)"),
+                                      QMessageBox::Yes | QMessageBox::No,
+                                      bench_use_cache_ ? QMessageBox::Yes : QMessageBox::No);
+  bench_use_cache_ = (answer == QMessageBox::Yes);
+  bench_csv_path_ = QFileDialog::getSaveFileName(this, tr("Also write CSV to (cancel for none)"),
+                                                 bench_csv_path_, tr("CSV (*.csv)"));
+
+  // Build BenchParams.
+  mosaico::bench::BenchParams params;
+  params.sequence_name = selected_sequence_.toStdString();
+  for (const auto& t : selected_topics_)
+  {
+    params.topics.push_back(t.toStdString());
+  }
+  params.start_ns = sliderToNs(range_slider_->GetLowerValue());
+  params.end_ns = sliderToNs(range_slider_->GetUpperValue());
+  params.use_cache = bench_use_cache_;
+  params.retain_batches = false;
+
+  // Sinks
+  if (!bench_sink_)
+  {
+    bench_sink_ = std::make_unique<PlotDataMapSink>(this);
+    connect(bench_sink_.get(), &PlotDataMapSink::phaseFired, this, &MainWindow::onBenchPhase);
+    connect(bench_sink_.get(), &PlotDataMapSink::batchObserved, this, &MainWindow::onBenchBatch);
+    connect(bench_sink_.get(), &PlotDataMapSink::sampleObserved, this, &MainWindow::onBenchSample);
+    connect(bench_sink_.get(), &PlotDataMapSink::summaryReady, this, &MainWindow::onBenchSummary);
+  }
+
+  active_bench_sinks_.clear();
+  if (!bench_csv_path_.isEmpty())
+  {
+    QString stem = QFileInfo(bench_csv_path_).completeBaseName();
+    QString dir = QFileInfo(bench_csv_path_).absolutePath();
+    auto detail_path = mosaico::bench::defaultDetailPath(dir.toStdString(), stem.toStdString());
+    auto summary_path = mosaico::bench::defaultSummaryPath(dir.toStdString(), stem.toStdString());
+    active_bench_sinks_.emplace_back(
+        std::make_unique<mosaico::bench::CsvDetailSink>(detail_path, params.topics));
+    active_bench_sinks_.emplace_back(
+        std::make_unique<mosaico::bench::CsvSummarySink>(summary_path));
+  }
+
+  // Run repeat loop on the worker thread.
+  for (int k = 0; k < bench_repeat_; ++k)
+  {
+    auto run_params = params;
+    run_params.run_id = k;
+    bench_sink_->setRunId(k);
+
+    std::vector<mosaico::bench::MetricsSink*> sinks{ bench_sink_.get() };
+    for (auto& s : active_bench_sinks_)
+    {
+      sinks.push_back(s.get());
+    }
+
+    QMetaObject::invokeMethod(worker_, "runBench", Qt::QueuedConnection,
+                              Q_ARG(mosaico::bench::BenchParams, run_params),
+                              Q_ARG(std::vector<mosaico::bench::MetricsSink*>, sinks));
+  }
+}
+
+void MainWindow::onBenchPhase(int run_id, double t_s, QString phase, QString topic)
+{
+  Q_UNUSED(run_id);
+  Q_UNUSED(t_s);
+  Q_UNUSED(phase);
+  Q_UNUSED(topic);
+  // Phase markers wired into PlotDataMapRef in Task 17.
+}
+
+void MainWindow::onBenchBatch(int run_id, double t_s, QString topic, qint64 bytes, qint64 rows,
+                              double gap_ms)
+{
+  auto base = QString("mosaico_bench/run%1/").arg(run_id);
+  auto add = [&](const QString& name, double v) {
+    if (!plot_data_map_)
+    {
+      return;
+    }
+    auto std_name = name.toStdString();
+    auto& series = plot_data_map_->getOrCreateNumeric(std_name);
+    series.pushBack({ t_s, v });
+    new_bench_series_.insert(name);
+  };
+  add(base + "topic/" + topic + "/batch_bytes", static_cast<double>(bytes));
+  add(base + "topic/" + topic + "/batch_rows", static_cast<double>(rows));
+  add(base + "topic/" + topic + "/gap_ms", gap_ms);
+}
+
+void MainWindow::onBenchSample(int run_id, double t_s, quint32 cwnd, double srtt, quint64 retrans,
+                               quint64 acked, quint32 rcv, quint64 rss, quint64 vsz, quint64 heap,
+                               double cpu)
+{
+  auto base = QString("mosaico_bench/run%1/").arg(run_id);
+  auto add = [&](const QString& name, double v) {
+    if (!plot_data_map_)
+    {
+      return;
+    }
+    auto std_name = name.toStdString();
+    auto& series = plot_data_map_->getOrCreateNumeric(std_name);
+    series.pushBack({ t_s, v });
+    new_bench_series_.insert(name);
+  };
+  add(base + "network/cwnd_segs", static_cast<double>(cwnd));
+  add(base + "network/srtt_ms", srtt);
+  add(base + "network/retrans_total", static_cast<double>(retrans));
+  add(base + "network/bytes_acked", static_cast<double>(acked));
+  add(base + "network/rcv_space_kb", static_cast<double>(rcv));
+  add(base + "process/rss_kb", static_cast<double>(rss));
+  add(base + "process/vsz_kb", static_cast<double>(vsz));
+  add(base + "process/heap_kb", static_cast<double>(heap));
+  add(base + "process/cpu_pct", cpu);
+}
+
+void MainWindow::onBenchSummary(int run_id, double wall, qint64 bytes, double avg, double peak,
+                                double gap, quint64 rss0, quint64 rssP, quint64 rssE, double ratio,
+                                int verdict, QString error)
+{
+  Q_UNUSED(bytes);
+  Q_UNUSED(gap);
+  Q_UNUSED(rss0);
+  Q_UNUSED(rssP);
+  Q_UNUSED(rssE);
+  const char* v = (verdict == 0) ? "streaming" : (verdict == 1) ? "mixed" : "retention_bug";
+  setStatus(error.isEmpty() ? tr("bench run %1: ok in %2s — avg %3 Mbps, peak %4, ratio %5 → %6")
+                                  .arg(run_id)
+                                  .arg(wall, 0, 'f', 1)
+                                  .arg(avg, 0, 'f', 1)
+                                  .arg(peak, 0, 'f', 1)
+                                  .arg(ratio, 0, 'f', 3)
+                                  .arg(v) :
+                              tr("bench run %1 FAILED: %2").arg(run_id).arg(error));
+
+  for (const auto& name : new_bench_series_)
+  {
+    emit plotCreated(name);
+  }
+  new_bench_series_.clear();
 }
