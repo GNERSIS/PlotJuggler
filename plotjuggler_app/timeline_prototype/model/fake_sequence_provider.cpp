@@ -69,7 +69,7 @@ std::vector<Sequence> FakeSequenceProvider::generate()
 
   // Reference epoch: 2026-04-28 06:00:00 UTC, in ns.
   // (Value is arbitrary — the prototype only cares about relative offsets.)
-  constexpr qint64 kRefEpochNs = 1'777'705'200'000'000'000LL;
+  constexpr qint64 kRefEpochNs = 1'777'356'000'000'000'000LL;
 
   std::vector<Sequence> out;
 
