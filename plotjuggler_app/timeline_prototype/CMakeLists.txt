@@ -28,6 +28,7 @@ add_executable(timeline_prototype
   view/time_ruler_item.cpp
   view/timeline_scene_widget.cpp
   view/topic_item.cpp
+  view/work_range_handle_item.cpp
 )
 
 target_link_libraries(timeline_prototype

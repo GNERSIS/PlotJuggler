@@ -10,6 +10,7 @@
 #include "model/timeline_model.h"
 #include "view/playhead_item.h"
 #include "view/topic_item.h"
+#include "view/work_range_handle_item.h"
 
 #include <QGraphicsView>
 
@@ -48,6 +49,7 @@ protected:
 private slots:
   void rebuild();
   void onPlayheadChanged(qint64 ns);
+  void onWorkRangeChanged(qint64 start_ns, qint64 end_ns);
 
 private:
   void updateRulerGeometry();
@@ -68,6 +70,10 @@ private:
 
   PlayheadItem* playhead_ = nullptr;
   bool dragging_playhead_ = false;
+
+  WorkRangeHandleItem* work_start_handle_ = nullptr;
+  WorkRangeHandleItem* work_end_handle_ = nullptr;
+  WorkRangeHandleItem* dragging_handle_ = nullptr;
 };
 
 }  // namespace PJ::TimelinePrototype

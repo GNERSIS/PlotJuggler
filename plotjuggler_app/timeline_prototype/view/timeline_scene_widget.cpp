@@ -8,6 +8,7 @@
 
 #include "view/time_ruler_item.h"
 #include "view/topic_item.h"
+#include "view/work_range_handle_item.h"
 
 #include <QGraphicsScene>
 #include <QMouseEvent>
@@ -40,6 +41,12 @@ TimelineSceneWidget::TimelineSceneWidget(TimelineModel* model, QWidget* parent)
   playhead_ = new PlayheadItem();
   scene_->addItem(playhead_);
   connect(model_, &TimelineModel::playheadChanged, this, &TimelineSceneWidget::onPlayheadChanged);
+
+  work_start_handle_ = new WorkRangeHandleItem(WorkRangeHandleItem::Side::Start);
+  work_end_handle_ = new WorkRangeHandleItem(WorkRangeHandleItem::Side::End);
+  scene_->addItem(work_start_handle_);
+  scene_->addItem(work_end_handle_);
+  connect(model_, &TimelineModel::workRangeChanged, this, &TimelineSceneWidget::onWorkRangeChanged);
 
   connect(model_, &TimelineModel::sequencesChanged, this, &TimelineSceneWidget::rebuild);
   connect(model_, &TimelineModel::offsetsChanged, this, [this](int) { rebuild(); });
@@ -107,10 +114,11 @@ void TimelineSceneWidget::rebuild()
     return;
   }
 
-  // Remove all items except the ruler and playhead.
+  // Remove all items except the ruler, playhead, and work-range handles.
   for (QGraphicsItem* item : scene_->items())
   {
-    if (item == ruler_ || item == playhead_)
+    if (item == ruler_ || item == playhead_ || item == work_start_handle_ ||
+        item == work_end_handle_)
     {
       continue;
     }
@@ -146,6 +154,9 @@ void TimelineSceneWidget::rebuild()
 
   playhead_->setHeight(scene_h);
   onPlayheadChanged(model_->playhead());  // re-place after rebuild
+
+  auto [ws, we] = model_->workRange();
+  onWorkRangeChanged(ws, we);
 
   // Add the topic rectangles.
   qreal y = TimeRulerItem::kRulerHeight + 8.0;
@@ -197,6 +208,15 @@ void TimelineSceneWidget::mousePressEvent(QMouseEvent* e)
   {
     QGraphicsItem* item = itemAt(e->pos());
 
+    // Work-range handle drag (checked first — handles sit on the ruler, so
+    // this must win over the plain ruler-click / seek handler below).
+    if (auto* h = dynamic_cast<WorkRangeHandleItem*>(item))
+    {
+      dragging_handle_ = h;
+      e->accept();
+      return;
+    }
+
     // Playhead-or-ruler click: seek to that position.
     if (item == playhead_ || (item == ruler_ && e->pos().y() < TimeRulerItem::kRulerHeight))
     {
@@ -228,6 +248,23 @@ void TimelineSceneWidget::mousePressEvent(QMouseEvent* e)
 
 void TimelineSceneWidget::mouseMoveEvent(QMouseEvent* e)
 {
+  if (dragging_handle_)
+  {
+    QPointF s = mapToScene(e->pos());
+    auto [lo, hi] = model_->sceneExtent();
+    qint64 ns = static_cast<qint64>(s.x() / px_per_ns_) + lo;
+    auto [ws, we] = model_->workRange();
+    if (dragging_handle_->side() == WorkRangeHandleItem::Side::Start)
+    {
+      model_->setWorkRange(ns, we);
+    }
+    else
+    {
+      model_->setWorkRange(ws, ns);
+    }
+    e->accept();
+    return;
+  }
   if (dragging_playhead_)
   {
     QPointF s = mapToScene(e->pos());
@@ -271,6 +308,12 @@ void TimelineSceneWidget::mouseMoveEvent(QMouseEvent* e)
 
 void TimelineSceneWidget::mouseReleaseEvent(QMouseEvent* e)
 {
+  if (dragging_handle_ && e->button() == Qt::LeftButton)
+  {
+    dragging_handle_ = nullptr;
+    e->accept();
+    return;
+  }
   if (dragging_playhead_ && e->button() == Qt::LeftButton)
   {
     dragging_playhead_ = false;
@@ -327,6 +370,14 @@ void TimelineSceneWidget::onPlayheadChanged(qint64 ns)
   auto [ext_lo, ext_hi] = model_->sceneExtent();
   const qreal x = (ns - ext_lo) * px_per_ns_;
   playhead_->setPos(x, 0);
+}
+
+void TimelineSceneWidget::onWorkRangeChanged(qint64 start_ns, qint64 end_ns)
+{
+  auto [ext_lo, ext_hi] = model_->sceneExtent();
+  const qreal y = ruler_->pos().y();
+  work_start_handle_->setPos((start_ns - ext_lo) * px_per_ns_, y);
+  work_end_handle_->setPos((end_ns - ext_lo) * px_per_ns_, y);
 }
 
 }  // namespace PJ::TimelinePrototype
