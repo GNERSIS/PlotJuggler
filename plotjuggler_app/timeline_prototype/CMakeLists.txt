@@ -2,6 +2,7 @@
 
 set(TIMELINE_PROTO_SRC
   main.cpp
+  model/fake_sequence_provider.cpp
 )
 
 add_executable(timeline_prototype ${TIMELINE_PROTO_SRC})
