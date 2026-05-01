@@ -8,6 +8,7 @@
 #define PJ_TIMELINE_PROTOTYPE_TIMELINE_SCENE_WIDGET_H
 
 #include "model/timeline_model.h"
+#include "view/topic_item.h"
 
 #include <QGraphicsView>
 
@@ -45,6 +46,7 @@ private slots:
 
 private:
   void updateRulerGeometry();
+  bool isSequenceVisible(int seq_idx) const;  // honors selection-as-filter
 
   TimelineModel* model_;
   QGraphicsScene* scene_;

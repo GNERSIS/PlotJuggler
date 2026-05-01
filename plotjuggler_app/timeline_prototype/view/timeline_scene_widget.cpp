@@ -83,7 +83,7 @@ void TimelineSceneWidget::resizeEvent(QResizeEvent* e)
 
 void TimelineSceneWidget::rebuild()
 {
-  // Remove all items except the ruler, then re-add per current model state.
+  // Remove all items except the ruler.
   for (QGraphicsItem* item : scene_->items())
   {
     if (item == ruler_)
@@ -95,17 +95,59 @@ void TimelineSceneWidget::rebuild()
   }
 
   auto [ext_lo, ext_hi] = model_->sceneExtent();
-  const qreal scene_w = (ext_hi - ext_lo) * px_per_ns_;
-  const qreal scene_h = TimeRulerItem::kRulerHeight + 8.0 +
-                        std::max<qreal>(200.0, kRowHeight * 20);  // placeholder height
+  const auto& seqs = model_->sequences();
+
+  // Build a contiguous list of (seq_idx, topic_idx) for visible sequences.
+  std::vector<std::pair<int, int>> rows;
+  for (int s = 0; s < static_cast<int>(seqs.size()); ++s)
+  {
+    if (!isSequenceVisible(s))
+    {
+      continue;
+    }
+    for (int t = 0; t < static_cast<int>(seqs[s].topics.size()); ++t)
+    {
+      rows.emplace_back(s, t);
+    }
+  }
+
+  const qreal rows_h = rows.size() * (kRowHeight + kRowGap) + 16.0;
+  const qreal scene_w = std::max<qreal>(100.0, (ext_hi - ext_lo) * px_per_ns_);
+  const qreal scene_h = TimeRulerItem::kRulerHeight + 8.0 + rows_h;
   scene_->setSceneRect(0, 0, scene_w, scene_h);
 
   ruler_->setEpochOffsetNs(ext_lo);
   ruler_->setTimeRange(ext_lo, ext_hi);
   ruler_->setPixelWidth(scene_w);
-  ruler_->setPos(0, 0);
+
+  // Add the topic rectangles.
+  qreal y = TimeRulerItem::kRulerHeight + 8.0;
+  for (const auto& [s, t] : rows)
+  {
+    auto [t_lo, t_hi] = model_->topicDisplayWindow(s, t);
+    const qreal x = (t_lo - ext_lo) * px_per_ns_;
+    const qreal w = std::max<qreal>(2.0, (t_hi - t_lo) * px_per_ns_);
+    const QString label = QString("%1 %2").arg(seqs[s].name).arg(seqs[s].topics[t].name);
+    auto* item =
+        new TopicItem(s, t, label, seqs[s].color, seqs[s].topics[t].topic_offset_overridden,
+                      seqs[s].seq_offset_overridden);
+    item->setRect(0, 0, w, kRowHeight);
+    item->setPos(x, y);
+    scene_->addItem(item);
+    y += kRowHeight + kRowGap;
+  }
 
   updateRulerGeometry();
+}
+
+bool TimelineSceneWidget::isSequenceVisible(int seq_idx) const
+{
+  const auto& sel = model_->selection();
+  if (sel.empty())
+  {
+    return true;
+  }
+  return sel.count(seq_idx) > 0;
 }
 
 void TimelineSceneWidget::updateRulerGeometry()
