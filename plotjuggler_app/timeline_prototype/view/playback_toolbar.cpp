@@ -39,6 +39,7 @@ PlaybackToolbar::PlaybackToolbar(TimelineModel* model, PlaybackController* contr
   speed_spin_->setValue(1.0);
   connect(speed_spin_, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged),
           controller_, &PlaybackController::setSpeed);
+  controller_->setSpeed(speed_spin_->value());  // bind defaults at startup
   addWidget(speed_spin_);
 
   addSeparator();
@@ -84,20 +85,15 @@ void PlaybackToolbar::onAlignmentComboChanged(int idx)
 
 void PlaybackToolbar::onResetAlignmentClicked()
 {
-  // Count overrides for the prompt.
+  // Count distinct sequences with any override. setTopicOffset auto-flags
+  // the parent sequence, so iterating per-topic would double-count user
+  // actions in a way that's hard to predict.
   int n = 0;
   for (const Sequence& s : model_->sequences())
   {
     if (s.seq_offset_overridden)
     {
       ++n;
-    }
-    for (const Topic& t : s.topics)
-    {
-      if (t.topic_offset_overridden)
-      {
-        ++n;
-      }
     }
   }
   if (n == 0)
@@ -106,7 +102,8 @@ void PlaybackToolbar::onResetAlignmentClicked()
     return;
   }
   auto reply = QMessageBox::question(
-      this, "Reset Alignment", QString("Reset %1 manual offset(s) and re-apply alignment?").arg(n),
+      this, "Reset Alignment",
+      QString("Reset offsets on %1 sequence(s) and re-apply alignment?").arg(n),
       QMessageBox::Ok | QMessageBox::Cancel);
   if (reply == QMessageBox::Ok)
   {

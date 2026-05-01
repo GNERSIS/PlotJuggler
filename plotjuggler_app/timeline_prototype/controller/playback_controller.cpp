@@ -62,7 +62,10 @@ void PlaybackController::onTick()
   {
     if (loop_)
     {
-      next = ws + (next - we);
+      // Modulo so a large dt_ns (process suspended past one work-range
+      // length) still wraps cleanly into [ws, we) instead of overshooting.
+      const qint64 len = we - ws;
+      next = (len > 0) ? (ws + ((next - ws) % len)) : ws;
     }
     else
     {
