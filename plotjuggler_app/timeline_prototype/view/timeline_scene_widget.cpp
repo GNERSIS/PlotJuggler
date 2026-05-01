@@ -37,6 +37,10 @@ TimelineSceneWidget::TimelineSceneWidget(TimelineModel* model, QWidget* parent)
   scene_->addItem(ruler_);
   ruler_->setEpochOffsetNs(0);  // task 9 will set this from sceneExtent
 
+  playhead_ = new PlayheadItem();
+  scene_->addItem(playhead_);
+  connect(model_, &TimelineModel::playheadChanged, this, &TimelineSceneWidget::onPlayheadChanged);
+
   connect(model_, &TimelineModel::sequencesChanged, this, &TimelineSceneWidget::rebuild);
   connect(model_, &TimelineModel::offsetsChanged, this, [this](int) { rebuild(); });
   connect(model_, &TimelineModel::selectionChanged, this,
@@ -94,10 +98,10 @@ void TimelineSceneWidget::rebuild()
     return;
   }
 
-  // Remove all items except the ruler.
+  // Remove all items except the ruler and playhead.
   for (QGraphicsItem* item : scene_->items())
   {
-    if (item == ruler_)
+    if (item == ruler_ || item == playhead_)
     {
       continue;
     }
@@ -130,6 +134,9 @@ void TimelineSceneWidget::rebuild()
   ruler_->setEpochOffsetNs(ext_lo);
   ruler_->setTimeRange(ext_lo, ext_hi);
   ruler_->setPixelWidth(scene_w);
+
+  playhead_->setHeight(scene_h);
+  onPlayheadChanged(model_->playhead());  // re-place after rebuild
 
   // Add the topic rectangles.
   qreal y = TimeRulerItem::kRulerHeight + 8.0;
@@ -180,6 +187,20 @@ void TimelineSceneWidget::mousePressEvent(QMouseEvent* e)
   if (e->button() == Qt::LeftButton)
   {
     QGraphicsItem* item = itemAt(e->pos());
+
+    // Playhead-or-ruler click: seek to that position.
+    if (item == playhead_ || (item == ruler_ && e->pos().y() < TimeRulerItem::kRulerHeight))
+    {
+      dragging_playhead_ = true;
+      QPointF s = mapToScene(e->pos());
+      auto [lo, hi] = model_->sceneExtent();
+      qint64 ns = static_cast<qint64>(s.x() / px_per_ns_) + lo;
+      model_->setPlayhead(ns);
+      e->accept();
+      return;
+    }
+
+    // Topic drag.
     auto* topic = dynamic_cast<TopicItem*>(item);
     if (topic)
     {
@@ -197,6 +218,15 @@ void TimelineSceneWidget::mousePressEvent(QMouseEvent* e)
 
 void TimelineSceneWidget::mouseMoveEvent(QMouseEvent* e)
 {
+  if (dragging_playhead_)
+  {
+    QPointF s = mapToScene(e->pos());
+    auto [lo, hi] = model_->sceneExtent();
+    qint64 ns = static_cast<qint64>(s.x() / px_per_ns_) + lo;
+    model_->setPlayhead(ns);
+    e->accept();
+    return;
+  }
   if (drag_item_)
   {
     const QPointF cur = mapToScene(e->pos());
@@ -230,6 +260,12 @@ void TimelineSceneWidget::mouseMoveEvent(QMouseEvent* e)
 
 void TimelineSceneWidget::mouseReleaseEvent(QMouseEvent* e)
 {
+  if (dragging_playhead_ && e->button() == Qt::LeftButton)
+  {
+    dragging_playhead_ = false;
+    e->accept();
+    return;
+  }
   if (drag_item_ && e->button() == Qt::LeftButton)
   {
     const qint64 tick = ruler_->currentTickIntervalNs();
@@ -273,6 +309,13 @@ void TimelineSceneWidget::mouseReleaseEvent(QMouseEvent* e)
     return;
   }
   QGraphicsView::mouseReleaseEvent(e);
+}
+
+void TimelineSceneWidget::onPlayheadChanged(qint64 ns)
+{
+  auto [ext_lo, ext_hi] = model_->sceneExtent();
+  const qreal x = (ns - ext_lo) * px_per_ns_;
+  playhead_->setPos(x, 0);
 }
 
 }  // namespace PJ::TimelinePrototype

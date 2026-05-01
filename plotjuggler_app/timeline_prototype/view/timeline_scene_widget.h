@@ -8,6 +8,7 @@
 #define PJ_TIMELINE_PROTOTYPE_TIMELINE_SCENE_WIDGET_H
 
 #include "model/timeline_model.h"
+#include "view/playhead_item.h"
 #include "view/topic_item.h"
 
 #include <QGraphicsView>
@@ -46,6 +47,7 @@ protected:
 
 private slots:
   void rebuild();
+  void onPlayheadChanged(qint64 ns);
 
 private:
   void updateRulerGeometry();
@@ -63,6 +65,9 @@ private:
   bool drag_topic_only_ = false;
   QPointF drag_start_scene_;
   qreal drag_dx_px_ = 0.0;
+
+  PlayheadItem* playhead_ = nullptr;
+  bool dragging_playhead_ = false;
 };
 
 }  // namespace PJ::TimelinePrototype
