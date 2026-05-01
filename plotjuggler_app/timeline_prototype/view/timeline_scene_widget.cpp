@@ -13,6 +13,7 @@
 #include <QScrollBar>
 #include <QWheelEvent>
 #include <algorithm>
+#include <limits>
 
 namespace PJ::TimelinePrototype
 {
@@ -66,7 +67,11 @@ void TimelineSceneWidget::wheelEvent(QWheelEvent* e)
 
   // Recenter so the same ns sits under the cursor.
   const qreal new_x = cursor_ns * px_per_ns_;
-  horizontalScrollBar()->setValue(static_cast<int>(std::max(0.0, new_x - e->position().x())));
+  const qreal target = std::max(0.0, new_x - e->position().x());
+  // Clamp to int range — at extreme zoom the scene can exceed INT_MAX pixels
+  // and silently wrap the scrollbar value.
+  const qreal clamped = std::min<qreal>(target, std::numeric_limits<int>::max());
+  horizontalScrollBar()->setValue(static_cast<int>(clamped));
   e->accept();
 }
 
@@ -107,6 +112,8 @@ void TimelineSceneWidget::updateRulerGeometry()
 {
   // Keep ruler visually pinned to the top of the viewport during vertical
   // scroll. We do this by parking the ruler at scene-y = scrollbar value.
+  // TODO(task-11+): also connect verticalScrollBar()::valueChanged so the
+  // ruler tracks live during scroll, not just on resize/rebuild.
   if (!ruler_)
   {
     return;

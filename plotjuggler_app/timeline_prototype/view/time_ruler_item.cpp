@@ -31,7 +31,6 @@ const std::array<qint64, 18> kCandidateSteps = {
 TimeRulerItem::TimeRulerItem()
 {
   setZValue(100);
-  setFlag(QGraphicsItem::ItemIgnoresTransformations, false);
 }
 
 void TimeRulerItem::setTimeRange(qint64 start_ns, qint64 end_ns)
