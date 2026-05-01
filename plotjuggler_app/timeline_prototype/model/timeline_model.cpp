@@ -121,8 +121,15 @@ void TimelineModel::resetAlignment()
       t.topic_offset_overridden = false;
     }
   }
+  // applyAlignmentToNonOverridden emits offsetsChanged(-1) when alignment
+  // is active; only emit ourselves when it would not have, to avoid a
+  // double-rebuild downstream.
+  const bool helper_will_emit = leading_idx_ >= 0 && alignment_ != AlignmentMode::None;
   applyAlignmentToNonOverridden();
-  emit offsetsChanged(-1);
+  if (!helper_will_emit)
+  {
+    emit offsetsChanged(-1);
+  }
 }
 
 std::pair<qint64, qint64> TimelineModel::displayWindow(int seq_idx) const
