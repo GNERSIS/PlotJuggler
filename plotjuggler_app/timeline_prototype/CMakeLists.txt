@@ -1,21 +1,29 @@
-# Timeline widget prototype — standalone Qt5 executable, no plotjuggler_base linkage.
-
-set(TIMELINE_PROTO_SRC
-  main.cpp
+# Model lib — separated so tests can link without pulling in main.cpp.
+add_library(timeline_prototype_model STATIC
   model/fake_sequence_provider.cpp
+  model/timeline_model.cpp
 )
 
-add_executable(timeline_prototype ${TIMELINE_PROTO_SRC})
+target_link_libraries(timeline_prototype_model
+  PUBLIC
+    Qt5::Core
+    Qt5::Gui
+)
+
+target_include_directories(timeline_prototype_model
+  PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+set_target_properties(timeline_prototype_model PROPERTIES AUTOMOC ON)
+
+# Executable.
+add_executable(timeline_prototype main.cpp)
 
 target_link_libraries(timeline_prototype
   PRIVATE
-    Qt5::Core
+    timeline_prototype_model
     Qt5::Widgets
-)
-
-target_include_directories(timeline_prototype
-  PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 set_target_properties(timeline_prototype PROPERTIES
@@ -23,3 +31,7 @@ set_target_properties(timeline_prototype PROPERTIES
   AUTOUIC ON
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
+
+if(BUILD_TESTING)
+  add_subdirectory(tests)
+endif()
