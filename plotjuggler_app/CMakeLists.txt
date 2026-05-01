@@ -212,3 +212,9 @@ elseif(COMPILING_WITH_AMENT)
 else()
   install(TARGETS plotjuggler DESTINATION bin)
 endif()
+
+# ----------------------------------------------------------------------------
+# Standalone timeline widget prototype (separate executable, see
+# docs/superpowers/specs/2026-05-01-timeline-widget-prototype-design.md)
+# ----------------------------------------------------------------------------
+add_subdirectory(timeline_prototype)
