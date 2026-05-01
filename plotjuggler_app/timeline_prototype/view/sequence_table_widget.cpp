@@ -6,10 +6,9 @@
 
 #include "view/sequence_table_widget.h"
 
+#include <QAbstractTableModel>
 #include <QHeaderView>
 #include <QItemSelectionModel>
-#include <QPainter>
-#include <QStyledItemDelegate>
 #include <QTableView>
 #include <QVBoxLayout>
 

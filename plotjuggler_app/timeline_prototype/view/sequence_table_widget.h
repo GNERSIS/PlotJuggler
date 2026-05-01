@@ -9,7 +9,6 @@
 
 #include "model/timeline_model.h"
 
-#include <QAbstractTableModel>
 #include <QWidget>
 
 class QTableView;
