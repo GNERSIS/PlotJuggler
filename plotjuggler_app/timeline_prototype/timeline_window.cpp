@@ -5,12 +5,11 @@
  */
 
 #include "timeline_window.h"
+#include "view/playback_toolbar.h"
 #include "view/sequence_table_widget.h"
 #include "view/timeline_scene_widget.h"
 
-#include <QLabel>
 #include <QSplitter>
-#include <QToolBar>
 
 namespace PJ::TimelinePrototype
 {
@@ -21,9 +20,8 @@ TimelineWindow::TimelineWindow(QWidget* parent)
   setWindowTitle("Timeline Prototype");
   resize(1280, 720);
 
-  // Top toolbar placeholder.
-  auto* toolbar = new QToolBar("Playback", this);
-  toolbar->addWidget(new QLabel("[ PlaybackToolbar placeholder ]"));
+  controller_ = std::make_unique<PlaybackController>(model_.get());
+  auto* toolbar = new PlaybackToolbar(model_.get(), controller_.get(), this);
   addToolBar(Qt::TopToolBarArea, toolbar);
 
   // Central splitter: LHS table | RHS scene.

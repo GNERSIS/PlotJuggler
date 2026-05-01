@@ -21,6 +21,8 @@ set_target_properties(timeline_prototype_model PROPERTIES AUTOMOC ON)
 add_executable(timeline_prototype
   main.cpp
   timeline_window.cpp
+  controller/playback_controller.cpp
+  view/playback_toolbar.cpp
   view/playhead_item.cpp
   view/sequence_table_widget.cpp
   view/time_ruler_item.cpp

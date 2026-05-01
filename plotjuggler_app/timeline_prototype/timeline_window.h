@@ -7,6 +7,7 @@
 #ifndef PJ_TIMELINE_PROTOTYPE_TIMELINE_WINDOW_H
 #define PJ_TIMELINE_PROTOTYPE_TIMELINE_WINDOW_H
 
+#include "controller/playback_controller.h"
 #include "model/timeline_model.h"
 
 #include <QMainWindow>
@@ -31,6 +32,7 @@ public:
 
 private:
   std::unique_ptr<TimelineModel> model_;
+  std::unique_ptr<PlaybackController> controller_;
   QSplitter* splitter_ = nullptr;
 };
 

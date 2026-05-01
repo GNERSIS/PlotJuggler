@@ -14,6 +14,8 @@ int main(int argc, char* argv[])
   QApplication app(argc, argv);
   PJ::TimelinePrototype::TimelineWindow window;
   window.model()->setSequences(PJ::TimelinePrototype::FakeSequenceProvider::generate());
+  auto [ext_lo, ext_hi] = window.model()->sceneExtent();
+  window.model()->setWorkRange(ext_lo, ext_hi);
   window.show();
   return app.exec();
 }
