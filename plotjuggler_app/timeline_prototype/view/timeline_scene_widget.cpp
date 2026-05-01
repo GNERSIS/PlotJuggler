@@ -47,6 +47,15 @@ TimelineSceneWidget::TimelineSceneWidget(TimelineModel* model, QWidget* parent)
           [this](const std::set<int>&) { rebuild(); });
 
   rebuild();
+
+  // If playhead is still at its default 0 (before any external setter ran),
+  // park it at the scene's left edge so it's visible at launch. The
+  // PlaybackController in Task 12 may overwrite this with a smarter default.
+  if (model_->playhead() == 0)
+  {
+    auto [lo, hi] = model_->sceneExtent();
+    model_->setPlayhead(lo);
+  }
 }
 
 void TimelineSceneWidget::wheelEvent(QWheelEvent* e)
@@ -195,6 +204,7 @@ void TimelineSceneWidget::mousePressEvent(QMouseEvent* e)
       QPointF s = mapToScene(e->pos());
       auto [lo, hi] = model_->sceneExtent();
       qint64 ns = static_cast<qint64>(s.x() / px_per_ns_) + lo;
+      ns = std::clamp(ns, lo, hi);
       model_->setPlayhead(ns);
       e->accept();
       return;
@@ -223,6 +233,7 @@ void TimelineSceneWidget::mouseMoveEvent(QMouseEvent* e)
     QPointF s = mapToScene(e->pos());
     auto [lo, hi] = model_->sceneExtent();
     qint64 ns = static_cast<qint64>(s.x() / px_per_ns_) + lo;
+    ns = std::clamp(ns, lo, hi);
     model_->setPlayhead(ns);
     e->accept();
     return;
