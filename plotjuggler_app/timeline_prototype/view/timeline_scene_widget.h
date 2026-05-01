@@ -45,6 +45,7 @@ protected:
   void mousePressEvent(QMouseEvent* e) override;
   void mouseMoveEvent(QMouseEvent* e) override;
   void mouseReleaseEvent(QMouseEvent* e) override;
+  void contextMenuEvent(QContextMenuEvent* e) override;
 
 private slots:
   void rebuild();

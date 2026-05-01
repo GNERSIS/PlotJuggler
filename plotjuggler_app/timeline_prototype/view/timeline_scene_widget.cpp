@@ -10,7 +10,9 @@
 #include "view/topic_item.h"
 #include "view/work_range_handle_item.h"
 
+#include <QContextMenuEvent>
 #include <QGraphicsScene>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QResizeEvent>
 #include <QScrollBar>
@@ -18,6 +20,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <tuple>
 
 namespace PJ::TimelinePrototype
 {
@@ -370,6 +373,36 @@ void TimelineSceneWidget::mouseReleaseEvent(QMouseEvent* e)
     return;
   }
   QGraphicsView::mouseReleaseEvent(e);
+}
+
+void TimelineSceneWidget::contextMenuEvent(QContextMenuEvent* e)
+{
+  QGraphicsItem* item = itemAt(e->pos());
+  auto* handle = dynamic_cast<WorkRangeHandleItem*>(item);
+  if (!handle)
+  {
+    QGraphicsView::contextMenuEvent(e);
+    return;
+  }
+  QMenu menu(this);
+  const int lead = model_->leading();
+  const QString reset_label =
+      (lead >= 0) ? "Reset to leading sequence range" : "Reset to scene extent";
+  QAction* reset_action = menu.addAction(reset_label);
+  if (menu.exec(e->globalPos()) == reset_action)
+  {
+    qint64 lo, hi;
+    if (lead >= 0)
+    {
+      std::tie(lo, hi) = model_->displayWindow(lead);
+    }
+    else
+    {
+      std::tie(lo, hi) = model_->sceneExtent();
+    }
+    model_->setWorkRange(lo, hi);
+  }
+  e->accept();
 }
 
 void TimelineSceneWidget::onPlayheadChanged(qint64 ns)
