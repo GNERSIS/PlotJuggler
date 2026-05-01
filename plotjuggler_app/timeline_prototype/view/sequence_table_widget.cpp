@@ -13,6 +13,9 @@
 #include <QTableView>
 #include <QVBoxLayout>
 
+#include <cmath>
+#include <limits>
+
 namespace PJ::TimelinePrototype
 {
 
@@ -140,7 +143,14 @@ public:
     }
     bool ok = false;
     double ms = value.toString().remove(" *").toDouble(&ok);
-    if (!ok)
+    if (!ok || !std::isfinite(ms))
+    {
+      return false;
+    }
+    // Guard the cast — static_cast<qint64> of an out-of-range double is UB
+    // per C++17 [conv.fpint]. Reject silently; the user re-types.
+    constexpr double kMaxMs = static_cast<double>(std::numeric_limits<qint64>::max()) / 1e6;
+    if (std::abs(ms) >= kMaxMs)
     {
       return false;
     }
