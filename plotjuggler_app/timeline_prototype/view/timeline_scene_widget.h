@@ -56,7 +56,9 @@ private:
   TimeRulerItem* ruler_;
   qreal px_per_ns_ = kDefaultPxPerNs;
 
-  // Drag state.
+  // Drag state. rebuild() is gated against running while drag_item_ is set,
+  // so this raw pointer can't dangle from a model-driven re-populate.
+  // QPointer would be ideal but TopicItem is not a QObject.
   TopicItem* drag_item_ = nullptr;
   bool drag_topic_only_ = false;
   QPointF drag_start_scene_;

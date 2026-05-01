@@ -15,6 +15,7 @@
 #include <QScrollBar>
 #include <QWheelEvent>
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace PJ::TimelinePrototype
@@ -85,6 +86,14 @@ void TimelineSceneWidget::resizeEvent(QResizeEvent* e)
 
 void TimelineSceneWidget::rebuild()
 {
+  // Don't tear down items while a drag is in progress — drag_item_ would
+  // dangle and the next mouse event would crash. The drag's own model
+  // write at release will trigger a rebuild as a normal follow-up.
+  if (drag_item_)
+  {
+    return;
+  }
+
   // Remove all items except the ruler.
   for (QGraphicsItem* item : scene_->items())
   {
@@ -224,7 +233,9 @@ void TimelineSceneWidget::mouseReleaseEvent(QMouseEvent* e)
   if (drag_item_ && e->button() == Qt::LeftButton)
   {
     const qint64 tick = ruler_->currentTickIntervalNs();
-    qint64 dx_ns = static_cast<qint64>(drag_dx_px_ / px_per_ns_);
+    // llround for symmetric rounding — static_cast truncates toward zero
+    // and would lose sub-tick negative drags at high zoom.
+    qint64 dx_ns = std::llround(drag_dx_px_ / px_per_ns_);
     dx_ns = TimelineModel::snapToGrid(dx_ns, tick);
 
     const int s = drag_item_->sequenceIndex();
@@ -255,7 +266,9 @@ void TimelineSceneWidget::mouseReleaseEvent(QMouseEvent* e)
 
     drag_item_ = nullptr;
     drag_dx_px_ = 0.0;
-    setCursor(Qt::ArrowCursor);
+    // unsetCursor (not setCursor(ArrowCursor)) so per-item hover cursors
+    // (TopicItem's OpenHandCursor) become active again on the next hover.
+    unsetCursor();
     e->accept();
     return;
   }
