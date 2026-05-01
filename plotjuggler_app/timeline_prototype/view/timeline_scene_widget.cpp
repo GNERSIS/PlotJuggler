@@ -208,6 +208,13 @@ void TimelineSceneWidget::mousePressEvent(QMouseEvent* e)
   {
     QGraphicsItem* item = itemAt(e->pos());
 
+    // Clicking empty scene background clears LHS selection. We don't
+    // accept the event so QGraphicsView still handles potential pan.
+    if (item == nullptr)
+    {
+      model_->setSelection({});
+    }
+
     // Work-range handle drag (checked first — handles sit on the ruler, so
     // this must win over the plain ruler-click / seek handler below).
     if (auto* h = dynamic_cast<WorkRangeHandleItem*>(item))
@@ -374,6 +381,9 @@ void TimelineSceneWidget::onPlayheadChanged(qint64 ns)
 
 void TimelineSceneWidget::onWorkRangeChanged(qint64 start_ns, qint64 end_ns)
 {
+  // Same scroll-tracking caveat as the ruler — see TODO(task-11+) in
+  // updateRulerGeometry. When that fix lands, also call this slot so the
+  // handles re-pin atomically with the ruler.
   auto [ext_lo, ext_hi] = model_->sceneExtent();
   const qreal y = ruler_->pos().y();
   work_start_handle_->setPos((start_ns - ext_lo) * px_per_ns_, y);

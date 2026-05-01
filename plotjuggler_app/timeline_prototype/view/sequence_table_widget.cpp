@@ -9,6 +9,7 @@
 #include <QAbstractTableModel>
 #include <QHeaderView>
 #include <QItemSelectionModel>
+#include <QMenu>
 #include <QTableView>
 #include <QVBoxLayout>
 
@@ -117,6 +118,37 @@ public:
     return {};
   }
 
+  Qt::ItemFlags flags(const QModelIndex& idx) const override
+  {
+    Qt::ItemFlags f = QAbstractTableModel::flags(idx);
+    if (idx.isValid() && idx.column() == kColOffsetMs)
+    {
+      f |= Qt::ItemIsEditable;
+    }
+    return f;
+  }
+
+  bool setData(const QModelIndex& idx, const QVariant& value, int role) override
+  {
+    if (!idx.isValid() || role != Qt::EditRole)
+    {
+      return false;
+    }
+    if (idx.column() != kColOffsetMs)
+    {
+      return false;
+    }
+    bool ok = false;
+    double ms = value.toString().remove(" *").toDouble(&ok);
+    if (!ok)
+    {
+      return false;
+    }
+    qint64 ns = static_cast<qint64>(ms * 1e6);
+    model_->setSequenceOffset(idx.row(), ns);
+    return true;
+  }
+
   void refresh()
   {
     beginResetModel();
@@ -135,6 +167,47 @@ SequenceTableWidget::SequenceTableWidget(TimelineModel* model, QWidget* parent)
   table_->setModel(qt_model_);
   table_->setSelectionBehavior(QAbstractItemView::SelectRows);
   table_->setSelectionMode(QAbstractItemView::ExtendedSelection);
+  table_->setContextMenuPolicy(Qt::CustomContextMenu);
+  connect(table_, &QTableView::customContextMenuRequested, this, [this](const QPoint& pos) {
+    QModelIndex idx = table_->indexAt(pos);
+    if (!idx.isValid())
+    {
+      return;
+    }
+    QMenu menu(this);
+    QAction* set_lead = menu.addAction("Set as Leading");
+    QAction* clear_lead = menu.addAction("Clear Leading");
+    menu.addSeparator();
+    QAction* a_none = menu.addAction("Align: \xe2\x80\x94");
+    QAction* a_start = menu.addAction("Align: Start");
+    QAction* a_finish = menu.addAction("Align: Finish");
+    QAction* a_middle = menu.addAction("Align: Middle");
+    QAction* picked = menu.exec(table_->viewport()->mapToGlobal(pos));
+    if (picked == set_lead)
+    {
+      model_->setLeading(idx.row());
+    }
+    else if (picked == clear_lead)
+    {
+      model_->setLeading(-1);
+    }
+    else if (picked == a_none)
+    {
+      model_->setAlignment(AlignmentMode::None);
+    }
+    else if (picked == a_start)
+    {
+      model_->setAlignment(AlignmentMode::Start);
+    }
+    else if (picked == a_finish)
+    {
+      model_->setAlignment(AlignmentMode::Finish);
+    }
+    else if (picked == a_middle)
+    {
+      model_->setAlignment(AlignmentMode::Middle);
+    }
+  });
   table_->verticalHeader()->setVisible(false);
   table_->horizontalHeader()->setStretchLastSection(true);
   table_->setColumnWidth(kColColor, 18);
