@@ -162,6 +162,16 @@ std::pair<qint64, qint64> TimelineModel::sceneExtent() const
     auto [s, e] = displayWindow(static_cast<int>(i));
     lo = std::min(lo, s);
     hi = std::max(hi, e);
+    // Per-topic offsets (ε_topic, set via Ctrl+drag) can push individual
+    // topics outside the parent sequence window; widen the extent so they
+    // remain reachable in the scene's scrollable area.
+    const Sequence& seq = sequences_[i];
+    for (size_t j = 0; j < seq.topics.size(); ++j)
+    {
+      auto [ts, te] = topicDisplayWindow(static_cast<int>(i), static_cast<int>(j));
+      lo = std::min(lo, ts);
+      hi = std::max(hi, te);
+    }
   }
   return { lo, hi };
 }

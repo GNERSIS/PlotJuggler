@@ -22,6 +22,10 @@ TopicItem::TopicItem(int seq_idx, int topic_idx, const QString& label, const QCo
   , topic_overridden_(topic_overridden)
   , seq_overridden_(seq_overridden)
 {
+  // ItemIsSelectable: lets QGraphicsScene track per-item selection so
+  // paint() can flip the border on State_Selected. The actual sync between
+  // scene selection and the model's LHS-table selection lands in Task 10
+  // (mouse press/release routes through TimelineSceneWidget).
   setFlag(ItemIsSelectable, true);
   setAcceptHoverEvents(true);
   setCursor(Qt::OpenHandCursor);
