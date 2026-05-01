@@ -77,3 +77,92 @@ TEST(TimelineModel, SceneExtentEmptyReturnsZeroOne)
   EXPECT_EQ(start, 0);
   EXPECT_EQ(end, 1);
 }
+
+TEST(TimelineModel, AlignStartShiftsNonLeadingByMinDelta)
+{
+  TimelineModel m;
+  m.setSequences({ makeSeq("L", 1000, 2000), makeSeq("S", 5000, 5500) });
+  m.setLeading(0);
+  m.setAlignment(AlignmentMode::Start);
+  // S.min should land at L.min: δ = 1000 - 5000 = -4000
+  EXPECT_EQ(m.sequences()[1].display_offset_ns, -4000);
+  // L untouched
+  EXPECT_EQ(m.sequences()[0].display_offset_ns, 0);
+}
+
+TEST(TimelineModel, AlignFinishShiftsNonLeadingByMaxDelta)
+{
+  TimelineModel m;
+  m.setSequences({ makeSeq("L", 1000, 2000), makeSeq("S", 5000, 5500) });
+  m.setLeading(0);
+  m.setAlignment(AlignmentMode::Finish);
+  // S.max should land at L.max: δ = 2000 - 5500 = -3500
+  EXPECT_EQ(m.sequences()[1].display_offset_ns, -3500);
+}
+
+TEST(TimelineModel, AlignMiddleShiftsNonLeadingByCenterDelta)
+{
+  TimelineModel m;
+  m.setSequences({ makeSeq("L", 1000, 2000), makeSeq("S", 5000, 5500) });
+  m.setLeading(0);
+  m.setAlignment(AlignmentMode::Middle);
+  // L center = 1500, S center = 5250, δ = 1500 - 5250 = -3750
+  EXPECT_EQ(m.sequences()[1].display_offset_ns, -3750);
+}
+
+TEST(TimelineModel, OverriddenSequenceIgnoredByAlignment)
+{
+  TimelineModel m;
+  m.setSequences({ makeSeq("L", 0, 1000), makeSeq("A", 0, 1000), makeSeq("B", 0, 1000) });
+  m.setSequenceOffset(2, 9999);  // B is now overridden
+  m.setLeading(0);
+  m.setAlignment(AlignmentMode::Start);
+  EXPECT_EQ(m.sequences()[1].display_offset_ns, 0);     // A re-aligned
+  EXPECT_EQ(m.sequences()[2].display_offset_ns, 9999);  // B untouched
+  EXPECT_TRUE(m.sequences()[2].seq_offset_overridden);
+}
+
+TEST(TimelineModel, ChangingLeadingPreservesOverrides)
+{
+  TimelineModel m;
+  m.setSequences({ makeSeq("L1", 0, 100), makeSeq("L2", 0, 100), makeSeq("S", 0, 100) });
+  m.setSequenceOffset(2, 5000);  // S overridden
+  m.setLeading(0);
+  m.setAlignment(AlignmentMode::Start);
+  m.setLeading(1);                                      // change leading
+  EXPECT_EQ(m.sequences()[2].display_offset_ns, 5000);  // still untouched
+}
+
+TEST(TimelineModel, ResetAlignmentClearsOverridesAndReapplies)
+{
+  TimelineModel m;
+  m.setSequences({ makeSeq("L", 1000, 2000), makeSeq("S", 5000, 5500) });
+  m.setSequenceOffset(1, 9999);  // override
+  m.setLeading(0);
+  m.setAlignment(AlignmentMode::Start);
+  // Override stuck:
+  EXPECT_EQ(m.sequences()[1].display_offset_ns, 9999);
+  m.resetAlignment();
+  // After reset: override cleared, alignment re-applied → δ = -4000
+  EXPECT_FALSE(m.sequences()[1].seq_offset_overridden);
+  EXPECT_EQ(m.sequences()[1].display_offset_ns, -4000);
+}
+
+TEST(TimelineModel, SetTopicOffsetMarksBothOverridden)
+{
+  TimelineModel m;
+  m.setSequences({ makeSeq("S", 0, 1000, { makeTopic("/t", 100, 900) }) });
+  m.setTopicOffset(0, 0, 50);
+  EXPECT_TRUE(m.sequences()[0].topics[0].topic_offset_overridden);
+  EXPECT_TRUE(m.sequences()[0].seq_offset_overridden);
+  EXPECT_EQ(m.sequences()[0].topics[0].per_topic_offset_ns, 50);
+}
+
+TEST(TimelineModel, SnapToGridRoundsToNearest)
+{
+  EXPECT_EQ(TimelineModel::snapToGrid(123, 100), 100);
+  EXPECT_EQ(TimelineModel::snapToGrid(150, 100), 200);  // ties round away from 0
+  EXPECT_EQ(TimelineModel::snapToGrid(-150, 100), -200);
+  EXPECT_EQ(TimelineModel::snapToGrid(0, 100), 0);
+  EXPECT_EQ(TimelineModel::snapToGrid(42, 0), 42);  // 0 interval = identity
+}
