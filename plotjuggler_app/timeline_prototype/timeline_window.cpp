@@ -6,6 +6,7 @@
 
 #include "timeline_window.h"
 #include "view/sequence_table_widget.h"
+#include "view/timeline_scene_widget.h"
 
 #include <QLabel>
 #include <QSplitter>
@@ -32,8 +33,7 @@ TimelineWindow::TimelineWindow(QWidget* parent)
   lhs->setMinimumWidth(280);
   splitter_->addWidget(lhs);
 
-  auto* rhs = new QLabel("[ TimelineSceneWidget placeholder ]", splitter_);
-  rhs->setAlignment(Qt::AlignCenter);
+  auto* rhs = new TimelineSceneWidget(model_.get(), splitter_);
   splitter_->addWidget(rhs);
 
   splitter_->setStretchFactor(0, 0);

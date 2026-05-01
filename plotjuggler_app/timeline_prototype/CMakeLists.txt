@@ -22,6 +22,8 @@ add_executable(timeline_prototype
   main.cpp
   timeline_window.cpp
   view/sequence_table_widget.cpp
+  view/time_ruler_item.cpp
+  view/timeline_scene_widget.cpp
 )
 
 target_link_libraries(timeline_prototype
