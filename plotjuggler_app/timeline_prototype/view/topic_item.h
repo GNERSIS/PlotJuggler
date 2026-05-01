@@ -7,6 +7,8 @@
 #ifndef PJ_TIMELINE_PROTOTYPE_TOPIC_ITEM_H
 #define PJ_TIMELINE_PROTOTYPE_TOPIC_ITEM_H
 
+#include <cmath>
+
 #include <QColor>
 #include <QGraphicsRectItem>
 #include <QString>
@@ -29,6 +31,19 @@ public:
     return topic_idx_;
   }
 
+  void setGhostDx(qreal dx_px)
+  {
+    ghost_dx_px_ = dx_px;
+    update();
+  }
+
+  QRectF boundingRect() const override
+  {
+    QRectF r = QGraphicsRectItem::boundingRect();
+    qreal extra = std::abs(ghost_dx_px_);
+    return r.adjusted(-extra, 0, extra, 0);
+  }
+
   void paint(QPainter* p, const QStyleOptionGraphicsItem* opt, QWidget* w) override;
 
 private:
@@ -38,6 +53,7 @@ private:
   QColor fill_;
   bool topic_overridden_;
   bool seq_overridden_;
+  qreal ghost_dx_px_ = 0.0;
 };
 
 }  // namespace PJ::TimelinePrototype

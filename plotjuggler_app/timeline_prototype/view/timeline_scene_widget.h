@@ -40,6 +40,9 @@ public:
 protected:
   void wheelEvent(QWheelEvent* e) override;
   void resizeEvent(QResizeEvent* e) override;
+  void mousePressEvent(QMouseEvent* e) override;
+  void mouseMoveEvent(QMouseEvent* e) override;
+  void mouseReleaseEvent(QMouseEvent* e) override;
 
 private slots:
   void rebuild();
@@ -52,6 +55,12 @@ private:
   QGraphicsScene* scene_;
   TimeRulerItem* ruler_;
   qreal px_per_ns_ = kDefaultPxPerNs;
+
+  // Drag state.
+  TopicItem* drag_item_ = nullptr;
+  bool drag_topic_only_ = false;
+  QPointF drag_start_scene_;
+  qreal drag_dx_px_ = 0.0;
 };
 
 }  // namespace PJ::TimelinePrototype

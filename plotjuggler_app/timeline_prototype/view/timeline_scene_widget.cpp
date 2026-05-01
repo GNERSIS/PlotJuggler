@@ -7,8 +7,10 @@
 #include "view/timeline_scene_widget.h"
 
 #include "view/time_ruler_item.h"
+#include "view/topic_item.h"
 
 #include <QGraphicsScene>
+#include <QMouseEvent>
 #include <QResizeEvent>
 #include <QScrollBar>
 #include <QWheelEvent>
@@ -162,6 +164,102 @@ void TimelineSceneWidget::updateRulerGeometry()
   }
   const qreal y = verticalScrollBar() ? verticalScrollBar()->value() : 0;
   ruler_->setPos(0, y);
+}
+
+void TimelineSceneWidget::mousePressEvent(QMouseEvent* e)
+{
+  if (e->button() == Qt::LeftButton)
+  {
+    QGraphicsItem* item = itemAt(e->pos());
+    auto* topic = dynamic_cast<TopicItem*>(item);
+    if (topic)
+    {
+      drag_item_ = topic;
+      drag_topic_only_ = (e->modifiers() & Qt::ControlModifier);
+      drag_start_scene_ = mapToScene(e->pos());
+      drag_dx_px_ = 0.0;
+      setCursor(drag_topic_only_ ? Qt::SizeHorCursor : Qt::ClosedHandCursor);
+      e->accept();
+      return;
+    }
+  }
+  QGraphicsView::mousePressEvent(e);
+}
+
+void TimelineSceneWidget::mouseMoveEvent(QMouseEvent* e)
+{
+  if (drag_item_)
+  {
+    const QPointF cur = mapToScene(e->pos());
+    const qreal dx_px = cur.x() - drag_start_scene_.x();
+    drag_dx_px_ = dx_px;
+
+    if (drag_topic_only_)
+    {
+      drag_item_->setGhostDx(dx_px);
+    }
+    else
+    {
+      // Move all topic items in the same sequence.
+      const int s = drag_item_->sequenceIndex();
+      for (QGraphicsItem* it : scene_->items())
+      {
+        if (auto* ti = dynamic_cast<TopicItem*>(it))
+        {
+          if (ti->sequenceIndex() == s)
+          {
+            ti->setGhostDx(dx_px);
+          }
+        }
+      }
+    }
+    e->accept();
+    return;
+  }
+  QGraphicsView::mouseMoveEvent(e);
+}
+
+void TimelineSceneWidget::mouseReleaseEvent(QMouseEvent* e)
+{
+  if (drag_item_ && e->button() == Qt::LeftButton)
+  {
+    const qint64 tick = ruler_->currentTickIntervalNs();
+    qint64 dx_ns = static_cast<qint64>(drag_dx_px_ / px_per_ns_);
+    dx_ns = TimelineModel::snapToGrid(dx_ns, tick);
+
+    const int s = drag_item_->sequenceIndex();
+    const int t = drag_item_->topicIndex();
+
+    // Clear ghosts before model write so rebuild() paints from the new state.
+    for (QGraphicsItem* it : scene_->items())
+    {
+      if (auto* ti = dynamic_cast<TopicItem*>(it))
+      {
+        ti->setGhostDx(0.0);
+      }
+    }
+
+    if (dx_ns != 0)
+    {
+      if (drag_topic_only_)
+      {
+        const auto& topic = model_->sequences()[s].topics[t];
+        model_->setTopicOffset(s, t, topic.per_topic_offset_ns + dx_ns);
+      }
+      else
+      {
+        const auto& seq = model_->sequences()[s];
+        model_->setSequenceOffset(s, seq.display_offset_ns + dx_ns);
+      }
+    }
+
+    drag_item_ = nullptr;
+    drag_dx_px_ = 0.0;
+    setCursor(Qt::ArrowCursor);
+    e->accept();
+    return;
+  }
+  QGraphicsView::mouseReleaseEvent(e);
 }
 
 }  // namespace PJ::TimelinePrototype

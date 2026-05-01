@@ -34,25 +34,26 @@ TopicItem::TopicItem(int seq_idx, int topic_idx, const QString& label, const QCo
 
 void TopicItem::paint(QPainter* p, const QStyleOptionGraphicsItem* opt, QWidget*)
 {
+  QRectF r = rect().translated(ghost_dx_px_, 0);
+
   QColor c = fill_;
-  c.setAlphaF(0.8);
+  c.setAlphaF(qFuzzyIsNull(ghost_dx_px_) ? 0.8 : 0.5);
   p->setBrush(c);
 
   QPen border((opt->state & QStyle::State_Selected) ? Qt::white : QColor(20, 20, 20));
   border.setWidth((opt->state & QStyle::State_Selected) ? 2 : 1);
   p->setPen(border);
-  p->drawRect(rect());
+  p->drawRect(r);
 
-  // Label, elided to fit.
   QString text = label_;
   if (topic_overridden_)
   {
     text += " *";
   }
   QFontMetricsF fm(p->font());
-  text = fm.elidedText(text, Qt::ElideRight, rect().width() - 6);
+  text = fm.elidedText(text, Qt::ElideRight, r.width() - 6);
   p->setPen(Qt::white);
-  p->drawText(rect().adjusted(4, 0, -4, 0), Qt::AlignVCenter | Qt::AlignLeft, text);
+  p->drawText(r.adjusted(4, 0, -4, 0), Qt::AlignVCenter | Qt::AlignLeft, text);
 }
 
 }  // namespace PJ::TimelinePrototype
