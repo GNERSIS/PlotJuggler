@@ -5,12 +5,11 @@
  */
 
 #include "timeline_window.h"
+#include "view/sequence_table_widget.h"
 
 #include <QLabel>
 #include <QSplitter>
 #include <QToolBar>
-#include <QVBoxLayout>
-#include <QWidget>
 
 namespace PJ::TimelinePrototype
 {
@@ -29,8 +28,7 @@ TimelineWindow::TimelineWindow(QWidget* parent)
   // Central splitter: LHS table | RHS scene.
   splitter_ = new QSplitter(Qt::Horizontal, this);
 
-  auto* lhs = new QLabel("[ SequenceTableWidget placeholder ]", splitter_);
-  lhs->setAlignment(Qt::AlignCenter);
+  auto* lhs = new SequenceTableWidget(model_.get(), splitter_);
   lhs->setMinimumWidth(280);
   splitter_->addWidget(lhs);
 

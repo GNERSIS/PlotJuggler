@@ -21,6 +21,7 @@ set_target_properties(timeline_prototype_model PROPERTIES AUTOMOC ON)
 add_executable(timeline_prototype
   main.cpp
   timeline_window.cpp
+  view/sequence_table_widget.cpp
 )
 
 target_link_libraries(timeline_prototype
