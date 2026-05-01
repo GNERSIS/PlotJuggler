@@ -10,6 +10,7 @@
 #include "view/timeline_scene_widget.h"
 
 #include <QSplitter>
+#include <QStatusBar>
 
 namespace PJ::TimelinePrototype
 {
@@ -39,6 +40,9 @@ TimelineWindow::TimelineWindow(QWidget* parent)
   splitter_->setSizes({ 320, 960 });
 
   setCentralWidget(splitter_);
+
+  statusBar()->showMessage("Drag = move sequence  |  Ctrl+drag = move single topic  "
+                           "|  Wheel = zoom  |  Right-click LHS row for alignment");
 }
 
 TimelineWindow::~TimelineWindow() = default;
