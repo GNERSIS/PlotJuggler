@@ -18,7 +18,10 @@ target_include_directories(timeline_prototype_model
 set_target_properties(timeline_prototype_model PROPERTIES AUTOMOC ON)
 
 # Executable.
-add_executable(timeline_prototype main.cpp)
+add_executable(timeline_prototype
+  main.cpp
+  timeline_window.cpp
+)
 
 target_link_libraries(timeline_prototype
   PRIVATE

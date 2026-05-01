@@ -4,14 +4,16 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+#include "model/fake_sequence_provider.h"
+#include "timeline_window.h"
+
 #include <QApplication>
-#include <QLabel>
 
 int main(int argc, char* argv[])
 {
   QApplication app(argc, argv);
-  QLabel placeholder("timeline_prototype — empty window placeholder");
-  placeholder.setMinimumSize(800, 400);
-  placeholder.show();
+  PJ::TimelinePrototype::TimelineWindow window;
+  window.model()->setSequences(PJ::TimelinePrototype::FakeSequenceProvider::generate());
+  window.show();
   return app.exec();
 }
