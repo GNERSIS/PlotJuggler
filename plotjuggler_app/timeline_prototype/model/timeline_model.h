@@ -33,6 +33,7 @@ public:
 
   // ---- mutators (each emits the matching signal) -------------------------
   void setSequences(std::vector<Sequence> seqs);
+  void addSequence(Sequence seq);                  // appends; emits sequencesChanged
   void setLeading(int idx);                        // -1 = no leading
   void setAlignment(AlignmentMode mode);           // re-applies to non-overridden
   void setSequenceOffset(int seq_idx, qint64 ns);  // marks sequence overridden
@@ -96,7 +97,7 @@ private:
   std::set<int> selection_;
   qint64 playhead_ns_ = 0;
   qint64 work_start_ns_ = 0;
-  qint64 work_end_ns_ = 1;
+  qint64 work_end_ns_ = 60'000'000'000LL;  // 60s — see sceneExtent()
 };
 
 }  // namespace PJ::TimelinePrototype

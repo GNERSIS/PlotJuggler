@@ -36,7 +36,15 @@
 
 #include "ui_mainwindow.h"
 
+class QSplitter;
 class QVBoxLayout;
+class RhsSettingsPanel;
+class TabStrip;
+
+namespace PJ::TimelinePrototype
+{
+class EmbeddedTimelineWidget;
+}
 
 class MainWindow : public QMainWindow
 {
@@ -110,6 +118,8 @@ public slots:
 
   void onPlaybackLoop();
 
+  void onTimelineCurvesDropped(const QStringList& curve_names);
+
   void linkedZoomOut();
 
 private:
@@ -169,6 +179,34 @@ private:
   QMovie* _animated_streaming_movie;
   QTimer* _animated_streaming_timer;
 
+  // Timeline widget that replaces the legacy playback bar at the bottom of
+  // the plot area. The legacy ui->widgetTimescale is hidden but kept in the
+  // .ui file for now — the data and tracker-time wiring still live there.
+  PJ::TimelinePrototype::EmbeddedTimelineWidget* _timeline_widget = nullptr;
+
+  // Right-hand-side settings column. Sits inside _plot_area_splitter next to
+  // the plot tabs; the buttonPanelRight toggles its visibility. Currently a
+  // placeholder skeleton — concrete editors aren't wired in here.
+  RhsSettingsPanel* _rhs_settings_panel = nullptr;
+  QSplitter* _plot_area_splitter = nullptr;
+  int _rhs_panel_width = 280;  // remembered between hide/show
+
+  // Top horizontal row that hosts the QMenuBar AND the three panel toggle
+  // buttons. Installed via QMainWindow::setMenuWidget so the menu and the
+  // toggles share the same horizontal slot.
+  QWidget* _top_bar = nullptr;
+
+  // Custom tab strip living inside _top_bar. Mirrors the tabs of
+  // _main_tabbed_widget; the QTabWidget's own tab bar is hidden.
+  TabStrip* _tab_strip = nullptr;
+
+  // Pads on either side of _tab_strip whose widths track tabsFrame's
+  // horizontal extent — keeps the tab strip aligned with the chart area
+  // below it as the splitter is dragged or panels fold.
+  QWidget* _top_bar_left_pad = nullptr;
+  QWidget* _top_bar_right_pad = nullptr;
+  void syncTabStripToChart();
+
   enum LabelStatus
   {
     LEFT,
@@ -227,6 +265,8 @@ private:
   bool isStreamingActive() const;
 
   void closeEvent(QCloseEvent* event);
+
+  bool eventFilter(QObject* obj, QEvent* event) override;
 
   void loadPluginState(const QDomElement& root);
   QDomElement savePluginState(QDomDocument& doc);

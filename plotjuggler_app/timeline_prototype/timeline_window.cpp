@@ -6,11 +6,11 @@
 
 #include "timeline_window.h"
 #include "view/playback_toolbar.h"
-#include "view/sequence_table_widget.h"
 #include "view/timeline_scene_widget.h"
 
-#include <QSplitter>
 #include <QStatusBar>
+#include <QVBoxLayout>
+#include <QWidget>
 
 namespace PJ::TimelinePrototype
 {
@@ -25,24 +25,20 @@ TimelineWindow::TimelineWindow(QWidget* parent)
   auto* toolbar = new PlaybackToolbar(model_.get(), controller_.get(), this);
   addToolBar(Qt::TopToolBarArea, toolbar);
 
-  // Central splitter: LHS table | RHS scene.
-  splitter_ = new QSplitter(Qt::Horizontal, this);
+  auto* central = new QWidget(this);
+  auto* layout = new QVBoxLayout(central);
+  layout->setContentsMargins(0, 0, 0, 0);
+  layout->setSpacing(0);
 
-  auto* lhs = new SequenceTableWidget(model_.get(), splitter_);
-  lhs->setMinimumWidth(280);
-  splitter_->addWidget(lhs);
+  auto* scene = new TimelineSceneWidget(model_.get(), central);
+  connect(controller_.get(), &PlaybackController::playingChanged, scene,
+          &TimelineSceneWidget::setPlaying);
+  layout->addWidget(scene, 1);
 
-  auto* rhs = new TimelineSceneWidget(model_.get(), splitter_);
-  splitter_->addWidget(rhs);
-
-  splitter_->setStretchFactor(0, 0);
-  splitter_->setStretchFactor(1, 1);
-  splitter_->setSizes({ 320, 960 });
-
-  setCentralWidget(splitter_);
+  setCentralWidget(central);
 
   statusBar()->showMessage("Drag = move sequence  |  Ctrl+drag = move single topic  "
-                           "|  Wheel = zoom  |  Right-click LHS row for alignment");
+                           "|  Wheel = zoom");
 }
 
 TimelineWindow::~TimelineWindow() = default;

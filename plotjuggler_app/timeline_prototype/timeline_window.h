@@ -13,8 +13,6 @@
 #include <QMainWindow>
 #include <memory>
 
-class QSplitter;
-
 namespace PJ::TimelinePrototype
 {
 
@@ -33,7 +31,6 @@ public:
 private:
   std::unique_ptr<TimelineModel> model_;
   std::unique_ptr<PlaybackController> controller_;
-  QSplitter* splitter_ = nullptr;
 };
 
 }  // namespace PJ::TimelinePrototype

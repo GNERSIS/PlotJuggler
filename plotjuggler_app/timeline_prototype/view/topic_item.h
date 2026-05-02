@@ -20,7 +20,7 @@ class TopicItem : public QGraphicsRectItem
 {
 public:
   TopicItem(int seq_idx, int topic_idx, const QString& label, const QColor& fill,
-            bool topic_overridden, bool seq_overridden);
+            bool topic_overridden, bool seq_overridden, bool dimmed);
 
   int sequenceIndex() const
   {
@@ -53,6 +53,7 @@ private:
   QColor fill_;
   bool topic_overridden_;
   bool seq_overridden_;
+  bool dimmed_;
   qreal ghost_dx_px_ = 0.0;
 };
 

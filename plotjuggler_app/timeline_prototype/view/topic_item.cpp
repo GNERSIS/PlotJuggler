@@ -14,13 +14,14 @@ namespace PJ::TimelinePrototype
 {
 
 TopicItem::TopicItem(int seq_idx, int topic_idx, const QString& label, const QColor& fill,
-                     bool topic_overridden, bool seq_overridden)
+                     bool topic_overridden, bool seq_overridden, bool dimmed)
   : seq_idx_(seq_idx)
   , topic_idx_(topic_idx)
   , label_(label)
   , fill_(fill)
   , topic_overridden_(topic_overridden)
   , seq_overridden_(seq_overridden)
+  , dimmed_(dimmed)
 {
   // ItemIsSelectable lets QGraphicsScene track per-item selection so
   // paint() can flip the border on State_Selected. The actual sync between
@@ -39,11 +40,23 @@ void TopicItem::paint(QPainter* p, const QStyleOptionGraphicsItem* opt, QWidget*
   QRectF r = rect().translated(ghost_dx_px_, 0);
 
   QColor c = fill_;
-  c.setAlphaF(qFuzzyIsNull(ghost_dx_px_) ? 0.8 : 0.5);
+  qreal alpha = qFuzzyIsNull(ghost_dx_px_) ? 0.8 : 0.5;
+  if (dimmed_)
+  {
+    alpha *= 0.3;
+  }
+  c.setAlphaF(alpha);
   p->setBrush(c);
 
-  QPen border((opt->state & QStyle::State_Selected) ? Qt::white : QColor(20, 20, 20));
+  QPen border((opt->state & QStyle::State_Selected) ? QColor(0x11, 0x77, 0xff) :
+                                                      QColor(0x70, 0x70, 0x70));
   border.setWidth((opt->state & QStyle::State_Selected) ? 2 : 1);
+  if (dimmed_)
+  {
+    QColor bc = border.color();
+    bc.setAlphaF(0.4);
+    border.setColor(bc);
+  }
   p->setPen(border);
   p->drawRect(r);
 
@@ -54,7 +67,12 @@ void TopicItem::paint(QPainter* p, const QStyleOptionGraphicsItem* opt, QWidget*
   }
   QFontMetricsF fm(p->font());
   text = fm.elidedText(text, Qt::ElideRight, r.width() - 6);
-  p->setPen(Qt::white);
+  QColor text_color = QColor(0x11, 0x11, 0x11);
+  if (dimmed_)
+  {
+    text_color.setAlphaF(0.5);
+  }
+  p->setPen(text_color);
   p->drawText(r.adjusted(4, 0, -4, 0), Qt::AlignVCenter | Qt::AlignLeft, text);
 }
 

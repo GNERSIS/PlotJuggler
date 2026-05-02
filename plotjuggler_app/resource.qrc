@@ -132,8 +132,12 @@
         <file>resources/svg/add_tab.svg</file>
         <file>resources/svg/alarm-bell-active.svg</file>
         <file>resources/svg/alarm-bell.svg</file>
+        <file>resources/svg/align_left.svg</file>
+        <file>resources/svg/align_middle.svg</file>
+        <file>resources/svg/align_right.svg</file>
         <file>resources/svg/clear.svg</file>
         <file>resources/svg/close-button.svg</file>
+        <file>resources/svg/close_filled.svg</file>
         <file>resources/svg/collapse.svg</file>
         <file>resources/svg/color_background.svg</file>
         <file>resources/svg/colored_charts.svg</file>
@@ -156,6 +160,9 @@
         <file>resources/svg/loop.svg</file>
         <file>resources/svg/move_view.svg</file>
         <file>resources/svg/paste.svg</file>
+        <file>resources/svg/panel_bottom.svg</file>
+        <file>resources/svg/panel_left.svg</file>
+        <file>resources/svg/panel_right.svg</file>
         <file>resources/svg/pause.svg</file>
         <file>resources/svg/pencil-edit.svg</file>
         <file>resources/svg/play_arrow.svg</file>
@@ -165,6 +172,7 @@
         <file>resources/svg/red_circle.svg</file>
         <file>resources/svg/reference_line.svg</file>
         <file>resources/svg/reload.svg</file>
+        <file>resources/svg/reset_settings.svg</file>
         <file>resources/svg/remove_list.svg</file>
         <file>resources/svg/remove_red.svg</file>
         <file>resources/svg/right-arrow.svg</file>

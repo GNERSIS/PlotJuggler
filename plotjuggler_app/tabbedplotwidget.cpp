@@ -97,6 +97,12 @@ TabbedPlotWidget::TabbedPlotWidget(QString name, QMainWindow* mainwindow,
   _buttonAddTab->setFocusPolicy(Qt::NoFocus);
 
   connect(_buttonAddTab, &QPushButton::pressed, this, &TabbedPlotWidget::on_addTabButton_pressed);
+
+  // The MainWindow's TabStrip in the top bar provides a "+" button now, so
+  // the in-chart one is redundant. Kept the QPushButton instance alive (some
+  // legacy paint/resize code in this file still references it) but hidden so
+  // it doesn't take pixels.
+  _buttonAddTab->hide();
 }
 
 void TabbedPlotWidget::paintEvent(QPaintEvent* event)
@@ -175,6 +181,7 @@ PlotDocker* TabbedPlotWidget::addTab(QString tab_name)
 
   tabWidget()->setCurrentWidget(docker);
 
+  emit tabsChanged();
   return docker;
 }
 
@@ -257,6 +264,7 @@ void TabbedPlotWidget::on_renameCurrentTab()
   {
     tabWidget()->setTabText(idx, newName);
     currentTab()->setName(newName);
+    emit tabsChanged();
   }
 }
 
@@ -327,6 +335,7 @@ void TabbedPlotWidget::on_tabWidget_tabCloseRequested(int index)
   docker->deleteLater();
 
   tabWidget()->removeTab(index);
+  emit tabsChanged();
   emit undoableChange();
 }
 

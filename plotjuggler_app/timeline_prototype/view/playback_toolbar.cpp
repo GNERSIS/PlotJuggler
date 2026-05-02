@@ -7,12 +7,12 @@
 #include "view/playback_toolbar.h"
 
 #include <QAction>
-#include <QComboBox>
+#include <QActionGroup>
 #include <QDoubleSpinBox>
+#include <QIcon>
 #include <QLabel>
 #include <QMessageBox>
-#include <QPushButton>
-#include <QStyle>
+#include <QSignalBlocker>
 
 namespace PJ::TimelinePrototype
 {
@@ -23,12 +23,14 @@ PlaybackToolbar::PlaybackToolbar(TimelineModel* model, PlaybackController* contr
 {
   setMovable(false);
 
-  play_action_ = addAction(style()->standardIcon(QStyle::SP_MediaPlay), "Play");
+  play_action_ = addAction(QIcon(":/resources/svg/play_arrow.svg"), QString());
   play_action_->setCheckable(true);
+  play_action_->setToolTip("Play / Pause");
   connect(play_action_, &QAction::triggered, controller_, &PlaybackController::togglePlay);
 
-  loop_action_ = addAction("Loop");
+  loop_action_ = addAction(QIcon(":/resources/svg/loop.svg"), QString());
   loop_action_->setCheckable(true);
+  loop_action_->setToolTip("Loop playback");
   connect(loop_action_, &QAction::toggled, controller_, &PlaybackController::setLoop);
 
   addSeparator();
@@ -43,28 +45,53 @@ PlaybackToolbar::PlaybackToolbar(TimelineModel* model, PlaybackController* contr
   addWidget(speed_spin_);
 
   addSeparator();
-  addWidget(new QLabel("Align:"));
-  alignment_combo_ = new QComboBox(this);
-  alignment_combo_->addItem("—", static_cast<int>(AlignmentMode::None));
-  alignment_combo_->addItem("Start", static_cast<int>(AlignmentMode::Start));
-  alignment_combo_->addItem("Finish", static_cast<int>(AlignmentMode::Finish));
-  alignment_combo_->addItem("Middle", static_cast<int>(AlignmentMode::Middle));
-  connect(alignment_combo_, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
-          this, &PlaybackToolbar::onAlignmentComboChanged);
-  addWidget(alignment_combo_);
 
-  auto* reset_btn = new QPushButton("Reset Alignment", this);
-  connect(reset_btn, &QPushButton::clicked, this, &PlaybackToolbar::onResetAlignmentClicked);
-  addWidget(reset_btn);
+  // Three mutually-exclusive alignment buttons. Start = align_left is the
+  // default (matches AlignmentMode::Start). The button group enforces that
+  // exactly one is checked at any time; AlignmentMode::None is no longer
+  // surfaced in the UI but the model still accepts it programmatically.
+  alignment_group_ = new QActionGroup(this);
+  alignment_group_->setExclusive(true);
+
+  align_start_action_ = addAction(QIcon(":/resources/svg/align_left.svg"), QString());
+  align_start_action_->setCheckable(true);
+  align_start_action_->setToolTip("Align sequences to the leading sequence's start");
+  align_start_action_->setData(static_cast<int>(AlignmentMode::Start));
+  alignment_group_->addAction(align_start_action_);
+
+  align_middle_action_ = addAction(QIcon(":/resources/svg/align_middle.svg"), QString());
+  align_middle_action_->setCheckable(true);
+  align_middle_action_->setToolTip("Align sequences to the leading sequence's middle");
+  align_middle_action_->setData(static_cast<int>(AlignmentMode::Middle));
+  alignment_group_->addAction(align_middle_action_);
+
+  align_finish_action_ = addAction(QIcon(":/resources/svg/align_right.svg"), QString());
+  align_finish_action_->setCheckable(true);
+  align_finish_action_->setToolTip("Align sequences to the leading sequence's finish");
+  align_finish_action_->setData(static_cast<int>(AlignmentMode::Finish));
+  alignment_group_->addAction(align_finish_action_);
+
+  align_start_action_->setChecked(true);  // default
+  // Push the default to the model so its state matches the visible UI from
+  // the start. The model would otherwise default to AlignmentMode::None.
+  model_->setAlignment(AlignmentMode::Start);
+
+  connect(alignment_group_, &QActionGroup::triggered, this, [this](QAction* a) {
+    model_->setAlignment(static_cast<AlignmentMode>(a->data().toInt()));
+  });
+
+  auto* reset_action = addAction(QIcon(":/resources/svg/reset_settings.svg"), QString());
+  reset_action->setToolTip("Reset alignment offsets");
+  connect(reset_action, &QAction::triggered, this, &PlaybackToolbar::onResetAlignmentClicked);
 
   connect(controller_, &PlaybackController::playingChanged, this,
           &PlaybackToolbar::onPlayingChanged);
   connect(model_, &TimelineModel::alignmentChanged, this, [this](AlignmentMode m) {
-    const int idx = alignment_combo_->findData(static_cast<int>(m));
-    if (idx >= 0 && idx != alignment_combo_->currentIndex())
+    // Sync the buttons to whatever the model says without re-firing triggered.
+    const QSignalBlocker blocker(alignment_group_);
+    for (QAction* a : alignment_group_->actions())
     {
-      const QSignalBlocker blocker(alignment_combo_);
-      alignment_combo_->setCurrentIndex(idx);
+      a->setChecked(static_cast<AlignmentMode>(a->data().toInt()) == m);
     }
   });
 }
@@ -73,14 +100,7 @@ void PlaybackToolbar::onPlayingChanged(bool playing)
 {
   play_action_->setChecked(playing);
   play_action_->setIcon(
-      style()->standardIcon(playing ? QStyle::SP_MediaPause : QStyle::SP_MediaPlay));
-  play_action_->setText(playing ? "Pause" : "Play");
-}
-
-void PlaybackToolbar::onAlignmentComboChanged(int idx)
-{
-  const int v = alignment_combo_->itemData(idx).toInt();
-  model_->setAlignment(static_cast<AlignmentMode>(v));
+      QIcon(playing ? ":/resources/svg/pause.svg" : ":/resources/svg/play_arrow.svg"));
 }
 
 void PlaybackToolbar::onResetAlignmentClicked()

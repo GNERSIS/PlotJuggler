@@ -58,17 +58,18 @@ public slots:
 
   void on_stylesheetChanged(QString style_dir);
 
+  // Public so MainWindow's TabStrip can route close-button clicks here.
+  void on_tabWidget_tabCloseRequested(int index);
+
+  void on_addTabButton_pressed();
+
 private slots:
 
   void on_renameCurrentTab();
 
   void on_savePlotsToFile();
 
-  void on_addTabButton_pressed();
-
   void on_tabWidget_currentChanged(int index);
-
-  void on_tabWidget_tabCloseRequested(int index);
 
   void on_buttonLinkHorizontalScale_toggled(bool checked);
 
@@ -115,6 +116,10 @@ signals:
   void undoableChange();
   void tabAdded(PlotDocker*);
   void sendTabToNewWindow(PlotDocker*);
+  // Emitted whenever the tab list changes (added / removed / renamed).
+  // Used by the external tab strip in MainWindow to stay in sync without
+  // duplicating the per-event signals.
+  void tabsChanged();
 };
 
 #endif  // TABBEDPLOTWIDGET_H

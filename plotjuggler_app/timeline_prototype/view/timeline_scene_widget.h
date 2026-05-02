@@ -39,7 +39,21 @@ public:
     return px_per_ns_;
   }
 
+public slots:
+  // Wired to PlaybackController::playingChanged. While playing, the view
+  // auto-scrolls horizontally to keep the playhead on-screen.
+  void setPlaying(bool playing);
+
+signals:
+  // Emitted when curves are dropped onto the scene from PlotJuggler's curve
+  // tree (mime type "curveslist/add_curve"). The owning widget is responsible
+  // for resolving names → time ranges and feeding them back into the model.
+  void curvesDropped(const QStringList& curve_names);
+
 protected:
+  void dragEnterEvent(QDragEnterEvent* e) override;
+  void dragMoveEvent(QDragMoveEvent* e) override;
+  void dropEvent(QDropEvent* e) override;
   void wheelEvent(QWheelEvent* e) override;
   void resizeEvent(QResizeEvent* e) override;
   void mousePressEvent(QMouseEvent* e) override;
@@ -54,7 +68,6 @@ private slots:
 
 private:
   void updateRulerGeometry();
-  bool isSequenceVisible(int seq_idx) const;  // honors selection-as-filter
 
   TimelineModel* model_;
   QGraphicsScene* scene_;
@@ -71,6 +84,7 @@ private:
 
   PlayheadItem* playhead_ = nullptr;
   bool dragging_playhead_ = false;
+  bool is_playing_ = false;
 
   WorkRangeHandleItem* work_start_handle_ = nullptr;
   WorkRangeHandleItem* work_end_handle_ = nullptr;

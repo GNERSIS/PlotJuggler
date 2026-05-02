@@ -27,6 +27,12 @@ void TimelineModel::setSequences(std::vector<Sequence> seqs)
   emit sequencesChanged();
 }
 
+void TimelineModel::addSequence(Sequence seq)
+{
+  sequences_.push_back(std::move(seq));
+  emit sequencesChanged();
+}
+
 void TimelineModel::setLeading(int idx)
 {
   if (idx < -1 || idx >= static_cast<int>(sequences_.size()))
@@ -153,7 +159,11 @@ std::pair<qint64, qint64> TimelineModel::sceneExtent() const
 {
   if (sequences_.empty())
   {
-    return { 0, 1 };
+    // 60-second default so an empty timeline still has a usable ruler,
+    // playhead, and work range. The previous {0,1} ns default left the
+    // ruler with no room for a single tick step (tick candidates start at
+    // 1 ms) and the playhead as a single-pixel sliver.
+    return { 0, 60'000'000'000LL };
   }
   qint64 lo = std::numeric_limits<qint64>::max();
   qint64 hi = std::numeric_limits<qint64>::min();
@@ -205,6 +215,15 @@ void TimelineModel::applyAlignmentToNonOverridden()
     return;
   }
   const Sequence& L = sequences_[leading_idx_];
+  // Anchor to the leading sequence's *displayed* edges (raw timestamps shifted
+  // by its current display offset). Using raw L.min/max here would silently
+  // ignore any previous offset L carried — e.g. an offset L picked up while it
+  // was a follower of a prior leader — so others would snap to where L *would*
+  // sit at zero offset rather than where it is actually drawn. The visible
+  // symptom is "everyone aligns around the previous leader instead of the
+  // newly-chosen one."
+  const qint64 L_min = L.min_ts_ns + L.display_offset_ns;
+  const qint64 L_max = L.max_ts_ns + L.display_offset_ns;
   for (size_t i = 0; i < sequences_.size(); ++i)
   {
     if (static_cast<int>(i) == leading_idx_)
@@ -219,13 +238,13 @@ void TimelineModel::applyAlignmentToNonOverridden()
     switch (alignment_)
     {
       case AlignmentMode::Start:
-        S.display_offset_ns = L.min_ts_ns - S.min_ts_ns;
+        S.display_offset_ns = L_min - S.min_ts_ns;
         break;
       case AlignmentMode::Finish:
-        S.display_offset_ns = L.max_ts_ns - S.max_ts_ns;
+        S.display_offset_ns = L_max - S.max_ts_ns;
         break;
       case AlignmentMode::Middle: {
-        qint64 lc = (L.min_ts_ns + L.max_ts_ns) / 2;
+        qint64 lc = (L_min + L_max) / 2;
         qint64 sc = (S.min_ts_ns + S.max_ts_ns) / 2;
         S.display_offset_ns = lc - sc;
         break;

@@ -75,8 +75,8 @@ QRectF TimeRulerItem::boundingRect() const
 
 void TimeRulerItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*)
 {
-  painter->fillRect(boundingRect(), QColor(45, 45, 45));
-  painter->setPen(QColor(200, 200, 200));
+  painter->fillRect(boundingRect(), QColor(0xdd, 0xdd, 0xdd));
+  painter->setPen(QColor(0x33, 0x33, 0x33));
   painter->drawLine(QLineF(0, kRulerHeight - 1, width_px_, kRulerHeight - 1));
 
   if (end_ns_ <= start_ns_ || tick_interval_ns_ <= 0)

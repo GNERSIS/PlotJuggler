@@ -13,7 +13,7 @@
 #include <QToolBar>
 
 class QAction;
-class QComboBox;
+class QActionGroup;
 class QDoubleSpinBox;
 
 namespace PJ::TimelinePrototype
@@ -27,7 +27,6 @@ public:
 
 private slots:
   void onPlayingChanged(bool playing);
-  void onAlignmentComboChanged(int idx);
   void onResetAlignmentClicked();
 
 private:
@@ -36,7 +35,13 @@ private:
   QAction* play_action_ = nullptr;
   QAction* loop_action_ = nullptr;
   QDoubleSpinBox* speed_spin_ = nullptr;
-  QComboBox* alignment_combo_ = nullptr;
+
+  // Three exclusive alignment buttons (Start = align_left, Middle, Finish =
+  // align_right). The QActionGroup enforces single-selection.
+  QActionGroup* alignment_group_ = nullptr;
+  QAction* align_start_action_ = nullptr;
+  QAction* align_middle_action_ = nullptr;
+  QAction* align_finish_action_ = nullptr;
 };
 
 }  // namespace PJ::TimelinePrototype

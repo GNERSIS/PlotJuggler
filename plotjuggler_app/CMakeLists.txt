@@ -61,6 +61,7 @@ set(PLOTJUGGLER_SRC
     plot_docker.cpp
     plot_docker_toolbar.cpp
     preferences_dialog.cpp
+    rhs_settings_panel.cpp
     point_series_xy.cpp
     # plotzoomer.cpp
     plot_background.cpp
@@ -68,6 +69,7 @@ set(PLOTJUGGLER_SRC
     suggest_dialog.cpp
 
     # timeseries_qwt.cpp
+    tab_strip.cpp
     tabbedplotwidget.cpp
     tab_widget.h
     tree_completer.h
@@ -195,6 +197,7 @@ target_link_libraries(
           nlohmann_json::nlohmann_json
           fmt::fmt
           lua::lua
+          timeline_prototype_widgets
         )
 
 if(COMPILING_WITH_CATKIN)

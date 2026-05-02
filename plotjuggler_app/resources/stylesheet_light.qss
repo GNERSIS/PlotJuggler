@@ -4,14 +4,14 @@ theme: light
 
 widget_background: #ffffff
 main_background: #eeeeee
-dark_background: #dddddd
+dark_background: #eeeeee
 
 default_text:  #111111
 disabled_text: #666666
 
 widget_background_disabled: #eeeeee;
 
-border_default: #333333
+border_default: #707070
 border_hover:   #62c5ff
 border_checked: #1177ff
 
@@ -572,6 +572,34 @@ QPushButton:checked:hover{
 }
 
 
+/* QToolButton (used by QToolBar::addAction, e.g. the timeline toolbar) ---
+   Mirror the QPushButton treatment so hover renders as a subtle blue border
+   instead of QStyle's default opaque dark fill. */
+
+QToolButton {
+    background: transparent;
+    border: 0px;
+}
+
+QToolButton:hover {
+    border: 1px solid ${border_hover};
+}
+
+QToolButton:checked {
+    border: 2px solid ${border_checked};
+    border-radius: 4px;
+}
+
+QToolButton:pressed {
+    border: 2px solid ${border_checked};
+    border-radius: 4px;
+}
+
+QToolButton:checked:hover {
+    border: 1px solid ${border_checked};
+}
+
+
 /* QCombobox -------------------------------------------------------------- */
 
 QComboBox {
@@ -761,8 +789,8 @@ https://doc.qt.io/qt-5/stylesheet-examples.html#customizing-qmenubar
 
 --------------------------------------------------------------------------- */
 QMenuBar {
-  background: #333333;
-  color: #eeeeee;
+  background: ${main_background};
+  color: ${default_text};
   border: 0px solid ${border_default};
 }
 
@@ -804,7 +832,7 @@ QWidget#widgetLabelStreaming,
 QWidget#widgetLabelPublishers,
 QWidget#widgetLabelTimeseries
 {
-    background-color: #3e4750;
+    background-color: #343434;
     border: 1px solid black;
 }
 

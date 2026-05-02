@@ -69,13 +69,18 @@ TEST(TimelineModel, SceneExtentSpansAllSequencesAfterOffsets)
   EXPECT_EQ(end, 250);
 }
 
-TEST(TimelineModel, SceneExtentEmptyReturnsZeroOne)
+TEST(TimelineModel, SceneExtentEmptyReturns60sDefault)
 {
+  // The empty default needs to be wide enough that a freshly-launched
+  // timeline (no series dropped yet) renders a visible ruler, playhead, and
+  // work range. 60s was chosen so the ruler can lay out at least a few ticks
+  // at the default zoom; previously the {0, 1 ns} default left the ruler
+  // and playhead invisible.
   TimelineModel m;
   m.setSequences({});
   auto [start, end] = m.sceneExtent();
   EXPECT_EQ(start, 0);
-  EXPECT_EQ(end, 1);
+  EXPECT_EQ(end, 60'000'000'000LL);
 }
 
 TEST(TimelineModel, AlignStartShiftsNonLeadingByMinDelta)
@@ -131,6 +136,28 @@ TEST(TimelineModel, ChangingLeadingPreservesOverrides)
   m.setAlignment(AlignmentMode::Start);
   m.setLeading(1);                                      // change leading
   EXPECT_EQ(m.sequences()[2].display_offset_ns, 5000);  // still untouched
+}
+
+TEST(TimelineModel, ChangingLeadingAlignsToNewLeadDisplayedPosition)
+{
+  // Regression: when a new leading sequence is picked, others must align to
+  // its *displayed* edges, not its raw min/max. Otherwise the new leader keeps
+  // the offset it had as a follower and everyone snaps to where it would be at
+  // zero offset — visually, the previous leader stays put and the picked one
+  // looks like it's not actually leading.
+  TimelineModel m;
+  m.setSequences({ makeSeq("A", 0, 100), makeSeq("B", 200, 300) });
+  m.setLeading(0);
+  m.setAlignment(AlignmentMode::Start);
+  // After this: A.offset=0 (still at [0,100]), B.offset=-200 (now at [0,100]).
+  EXPECT_EQ(m.sequences()[0].display_offset_ns, 0);
+  EXPECT_EQ(m.sequences()[1].display_offset_ns, -200);
+
+  m.setLeading(1);
+  // B must stay where it was drawn (display window starting at 0). A must
+  // re-align to that display position, i.e., also start at 0 → offset 0.
+  EXPECT_EQ(m.sequences()[1].display_offset_ns, -200);
+  EXPECT_EQ(m.sequences()[0].display_offset_ns, 0);
 }
 
 TEST(TimelineModel, ResetAlignmentClearsOverridesAndReapplies)

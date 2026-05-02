@@ -11,8 +11,12 @@
 #include "view/work_range_handle_item.h"
 
 #include <QContextMenuEvent>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QGraphicsScene>
 #include <QMenu>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QResizeEvent>
 #include <QScrollBar>
@@ -30,12 +34,13 @@ TimelineSceneWidget::TimelineSceneWidget(TimelineModel* model, QWidget* parent)
 {
   setScene(scene_);
   setRenderHint(QPainter::Antialiasing);
-  setBackgroundBrush(QColor(35, 35, 35));
+  setBackgroundBrush(QColor(0xee, 0xee, 0xee));
   setAlignment(Qt::AlignLeft | Qt::AlignTop);
   setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
   setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
   setViewportUpdateMode(QGraphicsView::SmartViewportUpdate);
   setTransformationAnchor(QGraphicsView::NoAnchor);
+  setAcceptDrops(true);
 
   ruler_ = new TimeRulerItem();
   scene_->addItem(ruler_);
@@ -104,6 +109,11 @@ void TimelineSceneWidget::wheelEvent(QWheelEvent* e)
 void TimelineSceneWidget::resizeEvent(QResizeEvent* e)
 {
   QGraphicsView::resizeEvent(e);
+  // The scene's minimum size now tracks the viewport (so an empty model
+  // still fills the visible area). Re-run the layout so a viewport resize
+  // re-stretches the scene rect, ruler width, and playhead height. rebuild
+  // is gated against drag-in-progress, so it's safe to call here.
+  rebuild();
   updateRulerGeometry();
 }
 
@@ -132,14 +142,12 @@ void TimelineSceneWidget::rebuild()
   auto [ext_lo, ext_hi] = model_->sceneExtent();
   const auto& seqs = model_->sequences();
 
-  // Build a contiguous list of (seq_idx, topic_idx) for visible sequences.
+  // All sequences are always shown. Selection is rendered as a highlight
+  // (non-selected sequences are dimmed) rather than a filter — see
+  // isSequenceDimmed() below.
   std::vector<std::pair<int, int>> rows;
   for (int s = 0; s < static_cast<int>(seqs.size()); ++s)
   {
-    if (!isSequenceVisible(s))
-    {
-      continue;
-    }
     for (int t = 0; t < static_cast<int>(seqs[s].topics.size()); ++t)
     {
       rows.emplace_back(s, t);
@@ -147,8 +155,13 @@ void TimelineSceneWidget::rebuild()
   }
 
   const qreal rows_h = rows.size() * (kRowHeight + kRowGap) + 16.0;
-  const qreal scene_w = std::max<qreal>(100.0, (ext_hi - ext_lo) * px_per_ns_);
-  const qreal scene_h = TimeRulerItem::kRulerHeight + 8.0 + rows_h;
+  // Scene must always be at least as large as the visible viewport so that
+  // an empty model (no rows) still fills the panel rather than collapsing
+  // to a 100×40 patch in the corner.
+  const qreal vp_w = (viewport() && viewport()->width() > 0) ? viewport()->width() : 100.0;
+  const qreal vp_h = (viewport() && viewport()->height() > 0) ? viewport()->height() : 100.0;
+  const qreal scene_w = std::max<qreal>(vp_w, (ext_hi - ext_lo) * px_per_ns_);
+  const qreal scene_h = std::max<qreal>(vp_h, TimeRulerItem::kRulerHeight + 8.0 + rows_h);
   scene_->setSceneRect(0, 0, scene_w, scene_h);
 
   ruler_->setEpochOffsetNs(ext_lo);
@@ -161,7 +174,9 @@ void TimelineSceneWidget::rebuild()
   auto [ws, we] = model_->workRange();
   onWorkRangeChanged(ws, we);
 
-  // Add the topic rectangles.
+  // Add the topic rectangles. Topics whose sequence is not in the current
+  // selection (when a selection exists) are rendered dimmed.
+  const auto& sel = model_->selection();
   qreal y = TimeRulerItem::kRulerHeight + 8.0;
   for (const auto& [s, t] : rows)
   {
@@ -169,9 +184,10 @@ void TimelineSceneWidget::rebuild()
     const qreal x = (t_lo - ext_lo) * px_per_ns_;
     const qreal w = std::max<qreal>(2.0, (t_hi - t_lo) * px_per_ns_);
     const QString label = QString("%1 %2").arg(seqs[s].name).arg(seqs[s].topics[t].name);
+    const bool dimmed = !sel.empty() && sel.count(s) == 0;
     auto* item =
         new TopicItem(s, t, label, seqs[s].color, seqs[s].topics[t].topic_offset_overridden,
-                      seqs[s].seq_offset_overridden);
+                      seqs[s].seq_offset_overridden, dimmed);
     item->setRect(0, 0, w, kRowHeight);
     item->setPos(x, y);
     scene_->addItem(item);
@@ -181,14 +197,9 @@ void TimelineSceneWidget::rebuild()
   updateRulerGeometry();
 }
 
-bool TimelineSceneWidget::isSequenceVisible(int seq_idx) const
+void TimelineSceneWidget::setPlaying(bool playing)
 {
-  const auto& sel = model_->selection();
-  if (sel.empty())
-  {
-    return true;
-  }
-  return sel.count(seq_idx) > 0;
+  is_playing_ = playing;
 }
 
 void TimelineSceneWidget::updateRulerGeometry()
@@ -410,6 +421,77 @@ void TimelineSceneWidget::onPlayheadChanged(qint64 ns)
   auto [ext_lo, ext_hi] = model_->sceneExtent();
   const qreal x = (ns - ext_lo) * px_per_ns_;
   playhead_->setPos(x, 0);
+
+  // While playing, follow the playhead horizontally so it stays on-screen.
+  // Suppressed during a manual playhead drag — scrolling the view while the
+  // user is dragging would yank the cursor away from their grip.
+  if (is_playing_ && !dragging_playhead_)
+  {
+    auto* hbar = horizontalScrollBar();
+    if (!hbar)
+    {
+      return;
+    }
+    const int view_w = viewport()->width();
+    const int scroll_x = hbar->value();
+    const qreal margin = std::min<qreal>(80.0, view_w * 0.1);
+    const qreal view_x = x - scroll_x;
+    if (view_x < margin || view_x > view_w - margin)
+    {
+      // Park the playhead near the right edge so the user can see the
+      // upcoming timeline as it plays forward. After a loop wrap this also
+      // re-anchors the view to wherever the playhead jumped to.
+      qreal target = x - (view_w - margin);
+      target = std::clamp<qreal>(target, 0.0, std::numeric_limits<int>::max());
+      hbar->setValue(static_cast<int>(target));
+    }
+  }
+}
+
+void TimelineSceneWidget::dragEnterEvent(QDragEnterEvent* e)
+{
+  if (e->mimeData()->hasFormat("curveslist/add_curve"))
+  {
+    e->acceptProposedAction();
+    return;
+  }
+  QGraphicsView::dragEnterEvent(e);
+}
+
+void TimelineSceneWidget::dragMoveEvent(QDragMoveEvent* e)
+{
+  if (e->mimeData()->hasFormat("curveslist/add_curve"))
+  {
+    e->acceptProposedAction();
+    return;
+  }
+  QGraphicsView::dragMoveEvent(e);
+}
+
+void TimelineSceneWidget::dropEvent(QDropEvent* e)
+{
+  if (!e->mimeData()->hasFormat("curveslist/add_curve"))
+  {
+    QGraphicsView::dropEvent(e);
+    return;
+  }
+  // PlotJuggler's curvelist serializes selected curve names as a stream of
+  // QString (see curvelist_view.cpp). Decode and forward — the host (e.g.
+  // MainWindow) is responsible for resolving names → time ranges.
+  QByteArray payload = e->mimeData()->data("curveslist/add_curve");
+  QDataStream stream(&payload, QIODevice::ReadOnly);
+  QStringList names;
+  while (!stream.atEnd())
+  {
+    QString name;
+    stream >> name;
+    names << name;
+  }
+  if (!names.isEmpty())
+  {
+    emit curvesDropped(names);
+  }
+  e->acceptProposedAction();
 }
 
 void TimelineSceneWidget::onWorkRangeChanged(qint64 start_ns, qint64 end_ns)

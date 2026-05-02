@@ -5,6 +5,7 @@
  */
 
 #include <functional>
+#include <limits>
 #include <queue>
 #include <stdio.h>
 
@@ -29,6 +30,7 @@
 #include <QPluginLoader>
 #include <QPushButton>
 #include <QKeySequence>
+#include <QSplitter>
 #include <QLabel>
 #include <QScrollBar>
 #include <QSettings>
@@ -63,6 +65,9 @@
 #include "nlohmann_parsers.h"
 #include "cheatsheet/cheatsheet_dialog.h"
 #include "colormap_editor.h"
+#include "rhs_settings_panel.h"
+#include "tab_strip.h"
+#include "timeline_prototype/embedded_timeline_widget.h"
 
 #ifdef COMPILED_WITH_CATKIN
 
@@ -246,6 +251,107 @@ MainWindow::MainWindow(const QCommandLineParser& commandline_parser, QWidget* pa
   ui->labelStreamingAnimation->setMovie(_animated_streaming_movie);
   ui->labelStreamingAnimation->setHidden(true);
 
+  // Replace the legacy playback bar with the new timeline widget. The legacy
+  // ui->widgetTimescale is hidden rather than removed: the existing tracker /
+  // publish-timer / time-slider wiring still references its children, and
+  // hooking those into the timeline (sequence data, playhead → tracker_time,
+  // play/pause → _publish_timer) is not yet defined and is intentionally left
+  // unwired.
+  _timeline_widget = new PJ::TimelinePrototype::EmbeddedTimelineWidget(ui->plotPage);
+  _timeline_widget->setMinimumHeight(220);
+  ui->plottingLayout->addWidget(_timeline_widget);
+  ui->widgetTimescale->hide();
+
+  connect(_timeline_widget, &PJ::TimelinePrototype::EmbeddedTimelineWidget::curvesDropped, this,
+          &MainWindow::onTimelineCurvesDropped);
+
+  // Wrap ui->tabsFrame in a horizontal splitter so the right-hand-side
+  // settings panel can dock next to the plots and be resized by the user.
+  // We splice the splitter into the existing horizontalLayout_5 in tabsFrame's
+  // slot, preserving the small vertical button column that sits to its right.
+  if (auto* h_layout = qobject_cast<QHBoxLayout*>(ui->plottingAreaH->layout()))
+  {
+    const int tabs_idx = h_layout->indexOf(ui->tabsFrame);
+    h_layout->removeWidget(ui->tabsFrame);
+
+    _plot_area_splitter = new QSplitter(Qt::Horizontal, ui->plottingAreaH);
+    _plot_area_splitter->setChildrenCollapsible(false);
+    _plot_area_splitter->addWidget(ui->tabsFrame);
+
+    _rhs_settings_panel = new RhsSettingsPanel(_plot_area_splitter);
+    _plot_area_splitter->addWidget(_rhs_settings_panel);
+    _plot_area_splitter->setStretchFactor(0, 1);
+    _plot_area_splitter->setStretchFactor(1, 0);
+    _rhs_settings_panel->setVisible(ui->buttonPanelRight->isChecked());
+
+    h_layout->insertWidget(tabs_idx, _plot_area_splitter, 1);
+  }
+
+  // Absorb the legacy plot-control button column into the RHS settings panel.
+  // The buttons keep their object names + signal/slot connections — only the
+  // parent and slot in the layout change. After this, plottingAreaH has only
+  // tabsFrame as its child, so the splitter is the single rightmost widget.
+  if (_rhs_settings_panel && ui->verticalLayoutButtons)
+  {
+    QList<QWidget*> controls = {
+      ui->buttonLink,        ui->buttonTimeTracker,
+      ui->buttonShowpoint,   ui->buttonReferencePoint,
+      ui->buttonLegend,      ui->buttonActivateGrid,
+      ui->buttonRatio,       ui->buttonRemoveTimeOffset,
+      ui->buttonUseDateTime, ui->buttonZoomOut,
+      ui->buttonDots,
+    };
+    _rhs_settings_panel->installPlotControls(controls);
+
+    // Drop the (now-empty) verticalLayoutButtons from horizontalLayout_5.
+    if (auto* h_layout = qobject_cast<QHBoxLayout*>(ui->plottingAreaH->layout()))
+    {
+      h_layout->removeItem(ui->verticalLayoutButtons);
+      delete ui->verticalLayoutButtons;
+    }
+  }
+
+  // Three panel-fold buttons: each toggles one fixed-position panel. The
+  // colors_ui prototype reparented a single editor between three positions —
+  // we adapted that idea to fold three independent panels (sequence list,
+  // timeline, RHS settings) which matches our current layout.
+  connect(ui->buttonPanelLeft, &QPushButton::toggled, this, [this](bool checked) {
+    if (ui->leftMainWindowFrame)
+    {
+      ui->leftMainWindowFrame->setVisible(checked);
+    }
+  });
+  connect(ui->buttonPanelBottom, &QPushButton::toggled, this, [this](bool checked) {
+    if (_timeline_widget)
+    {
+      _timeline_widget->setVisible(checked);
+    }
+  });
+  connect(ui->buttonPanelRight, &QPushButton::toggled, this, [this](bool checked) {
+    if (!_rhs_settings_panel || !_plot_area_splitter)
+    {
+      return;
+    }
+    if (checked)
+    {
+      _rhs_settings_panel->setVisible(true);
+      const int total = _plot_area_splitter->width();
+      const int panel = std::min(_rhs_panel_width, std::max(100, total - 200));
+      _plot_area_splitter->setSizes({ total - panel, panel });
+    }
+    else
+    {
+      // Remember the user's chosen width before hiding so toggling back on
+      // restores roughly the same size instead of snapping to 280.
+      const auto sizes = _plot_area_splitter->sizes();
+      if (sizes.size() == 2 && sizes[1] > 0)
+      {
+        _rhs_panel_width = sizes[1];
+      }
+      _rhs_settings_panel->setVisible(false);
+    }
+  });
+
   connect(this, &MainWindow::stylesheetChanged, this, &MainWindow::on_stylesheetChanged);
 
   connect(this, &MainWindow::stylesheetChanged, _curvelist_widget,
@@ -284,12 +390,111 @@ MainWindow::MainWindow(const QCommandLineParser& commandline_parser, QWidget* pa
     }
   });
 
+  ui->menuBar->setNativeMenuBar(false);
+
+  // Compose a horizontal row that holds the QMenuBar on the left, the tab
+  // strip in the middle, and the three panel toggle buttons on the right,
+  // then drop it into the main window's menu-bar slot. QMainWindow's
+  // setMenuWidget accepts any widget for that slot, so this is the cleanest
+  // way to share that horizontal space across menu / tabs / fold buttons.
+  // Must run before _main_tabbed_widget is constructed so _tab_strip exists
+  // when the QTabWidget→TabStrip sync is wired below.
+  _top_bar = new QWidget(this);
+  // Cap the row height so the menu, tab strip, and toggles share one tight
+  // line. 30 px is the smallest height that leaves the tab buttons' 2-px
+  // :checked border (4 px total — top + bottom) visible after AlignVCenter
+  // centers each button inside the row; smaller rows clip the bottom edge.
+  _top_bar->setFixedHeight(30);
+  auto* top_layout = new QHBoxLayout(_top_bar);
+  top_layout->setContentsMargins(0, 0, 0, 0);
+  top_layout->setSpacing(0);
+
+  // Left pad: holds the menu bar pushed to its left edge. Width is set
+  // dynamically by syncTabStripToChart so the pad's right edge tracks the
+  // chart's left edge.
+  _top_bar_left_pad = new QWidget(_top_bar);
+  auto* left_pad_layout = new QHBoxLayout(_top_bar_left_pad);
+  left_pad_layout->setContentsMargins(0, 0, 0, 0);
+  left_pad_layout->setSpacing(0);
+  left_pad_layout->addWidget(ui->menuBar, 0, Qt::AlignVCenter);
+  left_pad_layout->addStretch(1);
+  top_layout->addWidget(_top_bar_left_pad, 0, Qt::AlignVCenter);
+
+  // Tab strip: sits between the two pads. Stretch=1 so it takes whatever
+  // remains after the pads' fixed widths are applied.
+  _tab_strip = new TabStrip(_top_bar);
+  top_layout->addWidget(_tab_strip, 1, Qt::AlignVCenter);
+
+  // Right pad: holds the panel toggle buttons pushed to its right edge.
+  // Width set dynamically so the pad's left edge tracks the chart's right.
+  _top_bar_right_pad = new QWidget(_top_bar);
+  auto* right_pad_layout = new QHBoxLayout(_top_bar_right_pad);
+  right_pad_layout->setContentsMargins(0, 0, 4, 0);
+  right_pad_layout->setSpacing(2);
+  right_pad_layout->addStretch(1);
+  right_pad_layout->addWidget(ui->buttonPanelLeft, 0, Qt::AlignVCenter);
+  right_pad_layout->addWidget(ui->buttonPanelBottom, 0, Qt::AlignVCenter);
+  right_pad_layout->addWidget(ui->buttonPanelRight, 0, Qt::AlignVCenter);
+  top_layout->addWidget(_top_bar_right_pad, 0, Qt::AlignVCenter);
+
+  // The panel-toggle row inside plottingLayout is now empty (just a spacer
+  // is left in panelToolbar's layout). Drop it so the plot area starts at
+  // the very top of plotPage.
+  if (ui->panelToolbar)
+  {
+    ui->plottingLayout->removeWidget(ui->panelToolbar);
+    delete ui->panelToolbar;
+  }
+
+  setMenuWidget(_top_bar);
+
   _main_tabbed_widget = new TabbedPlotWidget("Main Window", this, _mapped_plot_data, this);
 
   connect(this, &MainWindow::stylesheetChanged, _main_tabbed_widget,
           &TabbedPlotWidget::on_stylesheetChanged);
 
   ui->tabsFrame->layout()->addWidget(_main_tabbed_widget);
+
+  // Track tabsFrame's geometry so the top bar's pads can keep _tab_strip
+  // pinned to the chart's horizontal extent. Resize fires whenever the
+  // splitter is dragged, panels fold/unfold, or the window itself resizes.
+  ui->tabsFrame->installEventFilter(this);
+  // Defer the first sync — at construction time tabsFrame's final geometry
+  // hasn't been computed yet (no layout pass has run with real widths).
+  QTimer::singleShot(0, this, &MainWindow::syncTabStripToChart);
+
+  // Hide the QTabWidget's own tab bar — _tab_strip in the top bar drives
+  // tab selection now. The QTabWidget is reduced to a QStackedWidget for
+  // the docker pages; everything else (close, rename, add) is routed
+  // through the strip.
+  if (auto* tw = _main_tabbed_widget->tabWidget())
+  {
+    if (auto* bar = tw->tabBar())
+    {
+      bar->hide();
+    }
+
+    auto rebuild_tab_strip = [this, tw]() {
+      QStringList names;
+      for (int i = 0; i < tw->count(); ++i)
+      {
+        names << tw->tabText(i);
+      }
+      _tab_strip->setTabs(names, tw->currentIndex());
+    };
+    rebuild_tab_strip();
+
+    connect(_main_tabbed_widget, &TabbedPlotWidget::tabsChanged, this, rebuild_tab_strip);
+    connect(tw, &QTabWidget::currentChanged, _tab_strip, &TabStrip::setCurrentIndex);
+
+    connect(_tab_strip, &TabStrip::tabSelected, tw, &QTabWidget::setCurrentIndex);
+    connect(_tab_strip, &TabStrip::addTabRequested, this, [this]() {
+      _main_tabbed_widget->addTab(QString());
+      emit _main_tabbed_widget->undoableChange();
+    });
+    connect(_tab_strip, &TabStrip::tabCloseRequested, this,
+            [this](int idx) { _main_tabbed_widget->on_tabWidget_tabCloseRequested(idx); });
+  }
   ui->leftLayout->addWidget(_curvelist_widget, 1);
 
   ui->mainSplitter->setCollapsible(0, true);
@@ -328,9 +533,6 @@ MainWindow::MainWindow(const QCommandLineParser& commandline_parser, QWidget* pa
   connect(_publish_timer, &QTimer::timeout, this, &MainWindow::onPlaybackLoop);
 
   ui->menuFile->setToolTipsVisible(true);
-
-  this->setMenuBar(ui->menuBar);
-  ui->menuBar->setNativeMenuBar(false);
 
   if (_test_option)
   {
@@ -1972,6 +2174,10 @@ void MainWindow::on_stylesheetChanged(QString theme)
   ui->buttonReferencePoint->setIcon(LoadSvg(":/resources/svg/reference_line.svg", theme));
 
   ui->buttonStreamingOptions->setIcon(LoadSvg(":/resources/svg/settings_cog.svg", theme));
+
+  ui->buttonPanelLeft->setIcon(LoadSvg(":/resources/svg/panel_left.svg", theme));
+  ui->buttonPanelRight->setIcon(LoadSvg(":/resources/svg/panel_right.svg", theme));
+  ui->buttonPanelBottom->setIcon(LoadSvg(":/resources/svg/panel_bottom.svg", theme));
 }
 
 void MainWindow::loadPluginState(const QDomElement& root)
@@ -2971,6 +3177,129 @@ void MainWindow::onPlaybackLoop()
   });
 }
 
+bool MainWindow::eventFilter(QObject* obj, QEvent* event)
+{
+  if (obj == ui->tabsFrame && event->type() == QEvent::Resize)
+  {
+    syncTabStripToChart();
+  }
+  return QMainWindow::eventFilter(obj, event);
+}
+
+void MainWindow::syncTabStripToChart()
+{
+  if (!_top_bar || !_top_bar_left_pad || !_top_bar_right_pad || !ui->tabsFrame)
+  {
+    return;
+  }
+  if (!_top_bar->isVisible() || _top_bar->width() <= 0 || ui->tabsFrame->width() <= 0)
+  {
+    return;
+  }
+  // Translate chart edges into top-bar coordinates so the pads' fixed widths
+  // pin _tab_strip's left and right edges directly above the chart.
+  const QPoint top_origin = _top_bar->mapTo(this, QPoint(0, 0));
+  const QPoint chart_origin = ui->tabsFrame->mapTo(this, QPoint(0, 0));
+  int left_w = chart_origin.x() - top_origin.x();
+  int right_w = (top_origin.x() + _top_bar->width()) - (chart_origin.x() + ui->tabsFrame->width());
+
+  // Floor each pad at its natural sizeHint so the menu bar can't be squished
+  // and — crucially — the three toggle buttons can never get pushed past the
+  // window's edge. When alignment to the chart conflicts with this floor,
+  // the floor wins and the tab strip gives up some pixels at that side.
+  const int min_left_w = _top_bar_left_pad->sizeHint().width();
+  const int min_right_w = _top_bar_right_pad->sizeHint().width();
+  left_w = std::max(min_left_w, left_w);
+  right_w = std::max(min_right_w, right_w);
+
+  _top_bar_left_pad->setFixedWidth(left_w);
+  _top_bar_right_pad->setFixedWidth(right_w);
+}
+
+void MainWindow::onTimelineCurvesDropped(const QStringList& curve_names)
+{
+  // PlotJuggler timestamps are seconds (double); the timeline tracks ns.
+  // Each drop becomes one new sequence; the dropped curves are its topics.
+  if (!_timeline_widget || curve_names.isEmpty())
+  {
+    return;
+  }
+
+  PJ::TimelinePrototype::Sequence seq;
+  seq.min_ts_ns = std::numeric_limits<qint64>::max();
+  seq.max_ts_ns = std::numeric_limits<qint64>::min();
+
+  for (const QString& qname : curve_names)
+  {
+    const std::string name = qname.toStdString();
+    qint64 first_ns = 0;
+    qint64 last_ns = 0;
+    bool found = false;
+
+    auto numeric_it = _mapped_plot_data.numeric.find(name);
+    if (numeric_it != _mapped_plot_data.numeric.end() && numeric_it->second.size() > 0)
+    {
+      first_ns = static_cast<qint64>(numeric_it->second.front().x * 1e9);
+      last_ns = static_cast<qint64>(numeric_it->second.back().x * 1e9);
+      found = true;
+    }
+    else
+    {
+      auto string_it = _mapped_plot_data.strings.find(name);
+      if (string_it != _mapped_plot_data.strings.end() && string_it->second.size() > 0)
+      {
+        first_ns = static_cast<qint64>(string_it->second.front().x * 1e9);
+        last_ns = static_cast<qint64>(string_it->second.back().x * 1e9);
+        found = true;
+      }
+    }
+
+    if (!found)
+    {
+      // Unknown to MainWindow's data store (could be an XY scatter or
+      // user_defined series — wiring those isn't obvious enough to commit
+      // to here). Skip silently.
+      continue;
+    }
+
+    PJ::TimelinePrototype::Topic topic;
+    topic.name = qname;
+    topic.first_sample_ns = first_ns;
+    topic.last_sample_ns = last_ns;
+    seq.topics.push_back(std::move(topic));
+    seq.min_ts_ns = std::min(seq.min_ts_ns, first_ns);
+    seq.max_ts_ns = std::max(seq.max_ts_ns, last_ns);
+  }
+
+  if (seq.topics.empty())
+  {
+    return;
+  }
+
+  // Sequence name: use the first curve's name as a stand-in. A future
+  // iteration can derive this from the Mosaico sequence concept.
+  seq.name = curve_names.first();
+  // Stable color from a small palette indexed by current sequence count.
+  static const QColor palette[] = { QColor(0x4FC3F7), QColor(0xFFB74D), QColor(0x81C784),
+                                    QColor(0xE57373), QColor(0xBA68C8), QColor(0xF06292),
+                                    QColor(0xA1887F) };
+  const int idx = static_cast<int>(_timeline_widget->model()->sequences().size()) %
+                  static_cast<int>(sizeof(palette) / sizeof(palette[0]));
+  seq.color = palette[idx];
+
+  _timeline_widget->model()->addSequence(std::move(seq));
+
+  // Initialize the work range to the scene extent on the very first drop so
+  // the playhead has somewhere meaningful to live; subsequent drops leave the
+  // user's existing work range alone.
+  if (_timeline_widget->model()->sequences().size() == 1)
+  {
+    auto [lo, hi] = _timeline_widget->model()->sceneExtent();
+    _timeline_widget->model()->setWorkRange(lo, hi);
+    _timeline_widget->model()->setPlayhead(lo);
+  }
+}
+
 void MainWindow::onCustomPlotCreated(std::vector<CustomPlotPtr> custom_plots)
 {
   std::set<PlotWidget*> widget_to_replot;
@@ -3398,8 +3727,18 @@ void MainWindow::onActionFullscreenTriggered()
   _minimized = !_minimized;
 
   ui->leftMainWindowFrame->setVisible(!_minimized);
-  ui->widgetTimescale->setVisible(!_minimized);
-  ui->menuBar->setVisible(!_minimized);
+  if (_timeline_widget)
+  {
+    _timeline_widget->setVisible(!_minimized);
+  }
+  if (_top_bar)
+  {
+    _top_bar->setVisible(!_minimized);
+  }
+  else
+  {
+    ui->menuBar->setVisible(!_minimized);
+  }
 
   for (auto& it : TabbedPlotWidget::instances())
   {
